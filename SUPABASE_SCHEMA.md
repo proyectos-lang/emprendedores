@@ -349,6 +349,30 @@ Solicitudes de cambio de `precio_venta_sugerido` enviadas por emprendedores.
 
 ---
 
+### `liquidaciones_semanales`
+Pago semanal (lunes-domingo) de la concept store a cada emprendedor — migración 022.
+Snapshot de montos al generar/recalcular; congelado al marcar `pagado`.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | `SERIAL` | PK | |
+| `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE NOT NULL | Multi-tenant |
+| `emprendimiento_id` | `INTEGER` | FK → `emprendimientos(id)` ON DELETE CASCADE NOT NULL | |
+| `fecha_inicio` | `DATE` | NOT NULL | Lunes de la semana |
+| `fecha_fin` | `DATE` | NOT NULL | Domingo |
+| `monto_ventas` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | Σ ventas de la semana (neto post-comisión bancaria) |
+| `monto_fletes` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | Σ fletes de envíos a descontar (positivo) |
+| `monto_neto` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | `ventas - fletes` (puede ser negativo) |
+| `estado` | `TEXT` | NOT NULL DEFAULT 'pendiente' CHECK | `pendiente` / `pagado` |
+| `fecha_pago` | `TIMESTAMPTZ` | NULL | |
+| `comprobante_url` | `TEXT` | NULL | Imagen del comprobante de transferencia (obligatorio al pagar, validado en app) |
+| `notas` | `TEXT` | NULL | |
+| `usuario` | `TEXT` | NULL | Auditoría |
+| `created_at` / `updated_at` | `TIMESTAMPTZ` | DEFAULT now() | |
+| | | UNIQUE(`emprendimiento_id`, `fecha_inicio`) | Idempotencia al regenerar |
+
+---
+
 ## 5. Ventas
 
 ### `ventas_encabezado`
@@ -370,6 +394,9 @@ Solicitudes de cambio de `precio_venta_sugerido` enviadas por emprendedores.
 | `valorpago` | `NUMERIC(14,2)` | DEFAULT 0 | Total pagado acumulado — migración 009 |
 | `comisionbanc` | `NUMERIC(5,4)` | NULL | % comisión bancaria efectiva — promedio ponderado |
 | `metodo_pago` | `TEXT` | NULL CHECK | `Efectivo`/`Banco`/`Link_Pago`/`Credito`/`Mixto`/`Otro` — migración 019 |
+| `es_credito` | `BOOLEAN` | NOT NULL DEFAULT false | Migración 022: venta valor 0 que descuenta stock |
+| `es_envio` | `BOOLEAN` | NOT NULL DEFAULT false | Migración 022 |
+| `valor_flete` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | Migración 022: se descuenta al emprendedor en liquidación, no al cliente |
 | `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE | Multi-tenant |
 | `usuario` | `TEXT` | NULL | Auditoría |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
@@ -487,6 +514,23 @@ Una sesión abierta por `razon_social_id` a la vez (restricción por índice par
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
 
 Índice único parcial: `(razon_social_id) WHERE estado = 'Abierta'` — garantiza máx. 1 sesión abierta.
+
+---
+
+### `caja_chica_conteos`
+Detalle del conteo físico de billetes (Lempiras) en apertura y cierre — migración 022.
+
+| Columna | Tipo | Restricciones | Descripción |
+|---|---|---|---|
+| `id` | `SERIAL` | PK | |
+| `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE NOT NULL | Multi-tenant |
+| `sesion_id` | `INTEGER` | FK → `caja_chica_sesiones(id)` ON DELETE CASCADE NOT NULL | |
+| `tipo` | `TEXT` | NOT NULL CHECK | `Apertura` / `Cierre` |
+| `detalle` | `JSONB` | NOT NULL | `{"500": 3, "200": 1, ...}` cantidad por denominación |
+| `total` | `NUMERIC(14,2)` | NOT NULL | Suma denominación × cantidad |
+| `usuario` | `TEXT` | NULL | Auditoría |
+| `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
+| | | UNIQUE(`sesion_id`, `tipo`) | Un conteo por sesión/tipo (upsert al recontar) |
 
 ---
 

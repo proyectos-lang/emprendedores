@@ -36,6 +36,17 @@ export interface VentaEncabezado {
    */
   comisionbanc?: number | null
   metodo_pago?: string | null
+  /**
+   * Venta a credito (migracion 022): descuenta inventario normalmente pero
+   * la venta queda con valor 0 (sin ingreso monetario, sin CxC).
+   */
+  es_credito?: boolean
+  /**
+   * Envio (migracion 022): el flete NO se suma a la factura del cliente;
+   * se descuenta de la liquidacion semanal del emprendedor.
+   */
+  es_envio?: boolean
+  valor_flete?: number
 }
 
 export interface VentaDetalle {
@@ -579,10 +590,19 @@ export async function crearVenta(
     // monto_bruto y el resultado es identico al comportamiento legacy.
     // Si no se envio desglose, mantenemos los campos del encabezado
     // (compatibilidad con flujos antiguos / pendientes).
-    const pagosDetalle = data.pagos_detalle ?? []
-    const totalVenta = Number(data.encabezado.total_venta || 0)
-    let valorpagoCalculado = Number(data.encabezado.valorpago ?? 0)
-    let estadoPagoCalculado = data.encabezado.estado_pago
+    // ----- VENTA A CREDITO (valor 0) ---------------------------------------
+    // Defensa en profundidad: aunque la UI ya manda todo en 0, el service
+    // fuerza la invariante para que una venta a credito NUNCA registre
+    // dinero: sin pagos, sin CxC (total 0 => estado Pagado), precios 0.
+    // El descuento de stock + kardex (paso 3) corre igual que siempre.
+    const esCredito = data.encabezado.es_credito === true
+
+    const pagosDetalle = esCredito ? [] : (data.pagos_detalle ?? [])
+    const totalVenta = esCredito ? 0 : Number(data.encabezado.total_venta || 0)
+    let valorpagoCalculado = esCredito ? 0 : Number(data.encabezado.valorpago ?? 0)
+    let estadoPagoCalculado: VentaEncabezado['estado_pago'] = esCredito
+      ? 'Pagado'
+      : data.encabezado.estado_pago
 
     if (pagosDetalle.length > 0) {
       valorpagoCalculado = pagosDetalle.reduce((acc, p) => {
@@ -641,7 +661,9 @@ export async function crearVenta(
 
     // Método de pago denormalizado: un valor resumen por venta para historial y cierre
     let metodoPagoEncabezado: string | null = null
-    if (pagosDetalle.length > 0) {
+    if (esCredito) {
+      metodoPagoEncabezado = 'Credito'
+    } else if (pagosDetalle.length > 0) {
       const metodosUnicos = [...new Set(pagosDetalle.map(p => p.metodo_pago))]
       metodoPagoEncabezado = metodosUnicos.length === 1 ? metodosUnicos[0] : 'Mixto'
     }
@@ -655,6 +677,10 @@ export async function crearVenta(
       almacen_id: data.almacen_id,
       comisionbanc: comisionEfectivaPct,
       metodo_pago: metodoPagoEncabezado,
+      es_credito: esCredito,
+      es_envio: data.encabezado.es_envio === true,
+      valor_flete: data.encabezado.es_envio === true ? Number(data.encabezado.valor_flete || 0) : 0,
+      ...(esCredito ? { subtotal: 0, total_venta: 0, impuesto_total: 0 } : {}),
       ...stamp
     }
 
@@ -666,10 +692,10 @@ export async function crearVenta(
 
     // Fallback: si alguna columna nueva aun no existe en la DB,
     // reintentamos sin esos campos para no bloquear la creacion de ventas.
-    if (ventaError && /valorpago|comisionbanc|metodo_pago|descuentodetalle/i.test(ventaError.message || '')) {
+    if (ventaError && /valorpago|comisionbanc|metodo_pago|descuentodetalle|es_credito|es_envio|valor_flete/i.test(ventaError.message || '')) {
       console.warn('[crearVenta] Columna nueva no existe. Reintentando sin campos nuevos.')
-      const { valorpago: _v, comisionbanc: _c, metodo_pago: _m, ...sinCamposNuevos } = encabezadoConAlmacen as
-        { valorpago?: number; comisionbanc?: number; metodo_pago?: string | null } & Record<string, unknown>
+      const { valorpago: _v, comisionbanc: _c, metodo_pago: _m, es_credito: _ec, es_envio: _ee, valor_flete: _vf, ...sinCamposNuevos } = encabezadoConAlmacen as
+        { valorpago?: number; comisionbanc?: number; metodo_pago?: string | null; es_credito?: boolean; es_envio?: boolean; valor_flete?: number } & Record<string, unknown>
       const retry = await supabase
         .from('ventas_encabezado')
         .insert(sinCamposNuevos)
@@ -686,6 +712,18 @@ export async function crearVenta(
     //    utilidad_linea se recalcula sobre el precio neto para reflejar el
     //    ingreso real del negocio.
     const detallesConVenta = data.detalles.map(d => {
+      // Venta a credito: precio y utilidad en 0 (neutral en estado de
+      // resultados); el costo del producto queda solo en el kardex.
+      if (esCredito) {
+        return {
+          ...d,
+          venta_id: ventaData.id,
+          razon_social_id: stamp.razon_social_id,
+          precio_unitario: 0,
+          descuentodetalle: 0,
+          utilidad_linea: 0,
+        }
+      }
       const descPct = d.descuentodetalle ?? 0
       if (comisionEfectivaPct > 0) {
         const precioNeto = +(d.precio_unitario * (1 - comisionEfectivaPct / 100)).toFixed(4)
@@ -2120,6 +2158,12 @@ export interface VentaEmprendedor {
   metodo_pago: string
   /** Estado de pago de la venta: Pendiente | Parcial | Pagado */
   estado_pago: string
+  /** Venta a credito (valor 0, migracion 022) */
+  es_credito: boolean
+  /** La venta fue un envio (migracion 022) */
+  es_envio: boolean
+  /** Flete del envio; se descuenta en la liquidacion semanal (migracion 022) */
+  valor_flete: number
 }
 
 function resolverMetodoPago(metodos: string[]): string {
@@ -2144,7 +2188,7 @@ export async function getVentasByEmprendimiento(
   if (!supabase) return []
 
   try {
-    const { data, error } = await supabase
+    const buildQuery = (conCamposEnvio: boolean) => supabase
       .from('ventas_detalle')
       .select(`
         venta_id,
@@ -2152,12 +2196,21 @@ export async function getVentasByEmprendimiento(
         precio_unitario,
         descuentodetalle,
         productos!inner(id, nombre, codigo_barras, emprendimiento_id),
-        ventas_encabezado!inner(fecha_venta, numero_factura, descuento, metodo_pago, estado_pago)
+        ventas_encabezado!inner(fecha_venta, numero_factura, descuento, metodo_pago, estado_pago${conCamposEnvio ? ', es_credito, es_envio, valor_flete' : ''})
       `)
       .eq('productos.emprendimiento_id', emprendimientoId)
       .gte('ventas_encabezado.fecha_venta', desde)
       .lte('ventas_encabezado.fecha_venta', hasta)
       .order('venta_id', { ascending: false })
+
+    let { data, error } = await buildQuery(true)
+
+    // Fallback si la migracion 022 no esta aplicada
+    if (error && /es_credito|es_envio|valor_flete/i.test(error.message || '')) {
+      const retry = await buildQuery(false)
+      data = retry.data
+      error = retry.error
+    }
 
     if (error) {
       console.error('[ventas] Error getVentasByEmprendimiento:', error)
@@ -2194,6 +2247,9 @@ export async function getVentasByEmprendimiento(
         numero_factura: encabezado?.numero_factura ?? '',
         metodo_pago,
         estado_pago: encabezado?.estado_pago ?? 'Pendiente',
+        es_credito: encabezado?.es_credito === true,
+        es_envio: encabezado?.es_envio === true,
+        valor_flete: Number(encabezado?.valor_flete ?? 0),
       }
     }).sort((a, b) => b.fecha_venta.localeCompare(a.fecha_venta))
   } catch (err) {

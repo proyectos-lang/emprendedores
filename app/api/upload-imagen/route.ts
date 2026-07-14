@@ -20,13 +20,17 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null
+    const folderRaw = formData.get('folder')
+    // Sanitizar: solo letras/numeros/guiones, para evitar path traversal
+    // en el nombre del archivo dentro del bucket.
+    const folder = typeof folderRaw === 'string' ? folderRaw.replace(/[^a-zA-Z0-9_-]/g, '') : ''
 
     if (!file) {
       return NextResponse.json({ error: 'No se recibio ningun archivo' }, { status: 400 })
     }
 
     const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}.${fileExt}`
+    const fileName = folder ? `${folder}/${Date.now()}.${fileExt}` : `${Date.now()}.${fileExt}`
 
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)

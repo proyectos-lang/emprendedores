@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Plus, Minus, Trash2, Printer, FileText, ShoppingCart, User, Receipt, Warehouse, MapPin, AlertTriangle, UserPlus, Wallet, X, Landmark, Store, Save, Clock } from "lucide-react"
+import Link from "next/link"
+import { Plus, Minus, Trash2, Printer, FileText, ShoppingCart, User, Receipt, Warehouse, MapPin, AlertTriangle, UserPlus, Wallet, X, Landmark, Store, Save, Clock, Truck, HandCoins } from "lucide-react"
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -11,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -296,6 +298,14 @@ export default function NuevaVentaPage() {
   const [localizacionId, setLocalizacionId] = React.useState<string>("")
   const [descuentoPct, setDescuentoPct] = React.useState<number>(0)
 
+  // Venta a credito (migracion 022): la venta queda con valor 0 (sin cobro,
+  // sin referencia de precio) pero descuenta inventario normalmente.
+  const [esCredito, setEsCredito] = React.useState(false)
+  // Envio (migracion 022): el flete NO se suma a la factura del cliente;
+  // se descuenta de la liquidacion semanal del emprendedor.
+  const [esEnvio, setEsEnvio] = React.useState(false)
+  const [valorFlete, setValorFlete] = React.useState("")
+
   // Desglose multi-metodo de pago. Cada linea representa un instrumento
   // de pago distinto (Efectivo, Banco, Link de Pago, Credito). La suma de
   // `monto_bruto` define el `valorpago` y, derivado, el `estado_pago`:
@@ -307,7 +317,7 @@ export default function NuevaVentaPage() {
   type PagoLinea = PagoVentaDetalleInput & { _id: string }
   const [pagosDetalle, setPagosDetalle] = React.useState<PagoLinea[]>([])
   const [cuentas, setCuentas] = React.useState<CuentaConfig[]>([])
-  const { sesion: cajaSesion, featurePending: cajaFeaturePending } = useCajaSesion()
+  const { sesion: cajaSesion, featurePending: cajaFeaturePending, loading: cajaLoading } = useCajaSesion()
   
   const [lineas, setLineas] = React.useState<LineaVenta[]>([])
 
@@ -772,9 +782,13 @@ export default function NuevaVentaPage() {
       toast({ title: "Error", description: "Agregue al menos un producto", variant: "destructive" })
       return
     }
+    if (esEnvio && !(Number(valorFlete) > 0)) {
+      toast({ title: "Error", description: "Ingrese el valor del flete del envio", variant: "destructive" })
+      return
+    }
 
     // ----- Validacion del Desglose de Pago -------------------------------
-    // Reglas:
+    // Reglas (se omiten por completo si es venta a credito: no lleva pagos):
     //  - Cada linea debe tener monto_bruto > 0.
     //  - Lineas Banco / Link_Pago requieren cuenta_id.
     //  - La suma de monto_bruto NO puede exceder el total de la venta
@@ -783,47 +797,49 @@ export default function NuevaVentaPage() {
     //  - Si hay efectivo en el desglose y la sesion de Caja Chica no
     //    esta abierta, bloqueamos. Si la migracion 011 aun no se aplico
     //    (cajaFeaturePending=true), permitimos seguir en modo degradado.
-    const sumaPagos = pagosDetalle.reduce((acc, p) => acc + (Number(p.monto_bruto) || 0), 0)
-    const sumaPagosRound = +sumaPagos.toFixed(2)
+    if (!esCredito) {
+      const sumaPagos = pagosDetalle.reduce((acc, p) => acc + (Number(p.monto_bruto) || 0), 0)
+      const sumaPagosRound = +sumaPagos.toFixed(2)
 
-    for (const p of pagosDetalle) {
-      if (!(Number(p.monto_bruto) > 0)) {
+      for (const p of pagosDetalle) {
+        if (!(Number(p.monto_bruto) > 0)) {
+          toast({
+            title: "Pago invalido",
+            description: "Cada linea de pago debe tener un monto mayor a 0",
+            variant: "destructive",
+          })
+          return
+        }
+        if ((p.metodo_pago === "Banco" || p.metodo_pago === "Link_Pago") && !p.cuenta_id) {
+          toast({
+            title: "Cuenta requerida",
+            description: `Seleccione la cuenta para el pago de tipo ${p.metodo_pago === "Link_Pago" ? "Link de Pago" : "Banco"}`,
+            variant: "destructive",
+          })
+          return
+        }
+      }
+
+      if (sumaPagosRound > +total.toFixed(2) && !todoEfectivo) {
         toast({
-          title: "Pago invalido",
-          description: "Cada linea de pago debe tener un monto mayor a 0",
+          title: "Sobrepago no permitido",
+          description: `La suma de pagos (L ${sumaPagosRound.toFixed(2)}) excede el total de la venta (L ${total.toFixed(2)})`,
           variant: "destructive",
         })
         return
       }
-      if ((p.metodo_pago === "Banco" || p.metodo_pago === "Link_Pago") && !p.cuenta_id) {
+
+      const tieneEfectivo = pagosDetalle.some(
+        (p) => p.metodo_pago === "Efectivo" && Number(p.monto_bruto) > 0
+      )
+      if (tieneEfectivo && !cajaFeaturePending && !cajaSesion) {
         toast({
-          title: "Cuenta requerida",
-          description: `Seleccione la cuenta para el pago de tipo ${p.metodo_pago === "Link_Pago" ? "Link de Pago" : "Banco"}`,
+          title: "Caja Chica cerrada",
+          description: "No hay sesion de Caja Chica abierta. Imposible registrar pagos en efectivo.",
           variant: "destructive",
         })
         return
       }
-    }
-
-    if (sumaPagosRound > +total.toFixed(2) && !todoEfectivo) {
-      toast({
-        title: "Sobrepago no permitido",
-        description: `La suma de pagos (L ${sumaPagosRound.toFixed(2)}) excede el total de la venta (L ${total.toFixed(2)})`,
-        variant: "destructive",
-      })
-      return
-    }
-
-    const tieneEfectivo = pagosDetalle.some(
-      (p) => p.metodo_pago === "Efectivo" && Number(p.monto_bruto) > 0
-    )
-    if (tieneEfectivo && !cajaFeaturePending && !cajaSesion) {
-      toast({
-        title: "Caja Chica cerrada",
-        description: "No hay sesion de Caja Chica abierta. Imposible registrar pagos en efectivo.",
-        variant: "destructive",
-      })
-      return
     }
 
     // Derivamos `valorpago` y `estado_pago` desde el NETO (lo que netea
@@ -857,6 +873,9 @@ export default function NuevaVentaPage() {
         total_venta: totalNeto,
         estado_pago: estadoPago,
         valorpago,
+        es_credito: esCredito,
+        es_envio: esEnvio,
+        valor_flete: esEnvio ? Number(valorFlete) || 0 : 0,
       }
 
       const detalles = lineas.map(l => ({
@@ -868,10 +887,15 @@ export default function NuevaVentaPage() {
         utilidad_linea: l.utilidad_linea
       }))
 
+      // Venta a credito: sin pagos, sin movimientos de dinero (el service
+      // tambien lo fuerza como defensa en profundidad).
+      let pagosParaDB: Omit<PagoVentaDetalleInput, never>[] = esCredito
+        ? []
+        : pagosDetalle.map(({ _id: _omit, ...rest }) => rest)
+
       // Para efectivo con cambio: guardamos el monto real cobrado (≤ total),
       // no el efectivo entregado por el cliente. El cambio es solo informativo.
-      let pagosParaDB = pagosDetalle.map(({ _id: _omit, ...rest }) => rest)
-      if (todoEfectivo && sumaBrutoRaw > +total.toFixed(2)) {
+      if (!esCredito && todoEfectivo && sumaBrutoRaw > +total.toFixed(2)) {
         let remaining = +total.toFixed(2)
         pagosParaDB = pagosParaDB.map(p => {
           const cap = +(Math.min(Number(p.monto_bruto) || 0, remaining)).toFixed(2)
@@ -894,10 +918,14 @@ export default function NuevaVentaPage() {
       }
 
       toast({ title: "Venta creada", description: `Factura ${numeroFactura} generada correctamente` })
-      
+
+      // Para el recibo/PDF de una venta a credito, reflejamos los mismos
+      // valores en 0 que se persistieron en la BD (crearVenta fuerza
+      // subtotal/total_venta/precio_unitario/utilidad_linea a 0).
       const ventaData = {
         encabezado: {
           ...encabezado,
+          ...(esCredito ? { subtotal: 0, total_venta: 0, impuesto_total: 0 } : {}),
           id: data?.id,
           cliente_nombre: selectedCliente?.nombre || "",
           fecha_venta: new Date().toISOString()
@@ -909,10 +937,10 @@ export default function NuevaVentaPage() {
           producto_nombre: l.producto_nombre,
           producto_codigo: l.producto_codigo,
           cantidad: l.cantidad,
-          precio_unitario: l.precio_unitario,
-          descuentodetalle: l.descuento ?? 0,
+          precio_unitario: esCredito ? 0 : l.precio_unitario,
+          descuentodetalle: esCredito ? 0 : (l.descuento ?? 0),
           costo_promedio_momento: l.costo_promedio,
-          utilidad_linea: l.utilidad_linea
+          utilidad_linea: esCredito ? 0 : l.utilidad_linea
         }))
       }
       
@@ -1239,6 +1267,9 @@ export default function NuevaVentaPage() {
     setClienteId("")
     setPagosDetalle([])
     setDescuentoPct(0)
+    setEsCredito(false)
+    setEsEnvio(false)
+    setValorFlete("")
     setFecha(new Date().toISOString().split("T")[0])
     setStockPorLocalizacion({})
     setLastVenta(null)
@@ -1266,7 +1297,7 @@ export default function NuevaVentaPage() {
     resetForm()
   }
 
-  if (loading) {
+  if (loading || cajaLoading) {
     return (
       <div className="min-h-[calc(100vh-4rem)] flex flex-col lg:flex-row">
         <div className="flex-1 p-4 md:p-6">
@@ -1275,6 +1306,34 @@ export default function NuevaVentaPage() {
         </div>
         <div className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l p-4 md:p-6">
           <Skeleton className="h-64 w-full" />
+        </div>
+      </div>
+    )
+  }
+
+  // Bloqueo de modulo: no se puede registrar una venta nueva sin una sesion
+  // de Caja Chica abierta. Historial y Dashboard de Ventas siguen accesibles
+  // (el gate es solo para esta pantalla). En modo degradado (migracion 011
+  // aun no aplicada) no bloqueamos.
+  if (!cajaFeaturePending && !cajaSesion) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-6">
+        <div className="max-w-md w-full text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+            <Wallet className="h-7 w-7 text-amber-700" />
+          </div>
+          <div className="space-y-1.5">
+            <h2 className="text-lg font-semibold">Caja Chica cerrada</h2>
+            <p className="text-sm text-muted-foreground">
+              Debes abrir la sesion de Caja Chica antes de registrar ventas nuevas.
+            </p>
+          </div>
+          <Button asChild size="lg" className="gap-2">
+            <Link href="/finanzas/caja-chica">
+              <Wallet className="h-4 w-4" />
+              Ir a Caja Chica
+            </Link>
+          </Button>
         </div>
       </div>
     )
@@ -1623,7 +1682,76 @@ export default function NuevaVentaPage() {
           </div>
         )}
 
-        {/* Desglose de Pago (multi-metodo) */}
+        {/* Venta a credito + Envio */}
+        <div className="px-4 py-3 border-b space-y-2">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <Checkbox
+              checked={esCredito}
+              onCheckedChange={(v) => {
+                const checked = v === true
+                setEsCredito(checked)
+                if (checked) setPagosDetalle([])
+              }}
+            />
+            <span className="text-sm">
+              <span className="font-medium flex items-center gap-1">
+                <HandCoins className="h-3.5 w-3.5" />
+                Venta a credito (valor 0)
+              </span>
+              <span className="block text-[11px] text-muted-foreground">
+                Descuenta inventario normalmente pero la venta queda en L 0.00 (sin cobro, sin referencia de precio).
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 cursor-pointer">
+            <Checkbox
+              checked={esEnvio}
+              onCheckedChange={(v) => {
+                const checked = v === true
+                setEsEnvio(checked)
+                if (!checked) setValorFlete("")
+              }}
+            />
+            <span className="text-sm flex-1">
+              <span className="font-medium flex items-center gap-1">
+                <Truck className="h-3.5 w-3.5" />
+                Es envio
+              </span>
+              <span className="block text-[11px] text-muted-foreground">
+                El flete no se suma a la factura del cliente; se descuenta de la liquidacion semanal del emprendedor.
+              </span>
+              {esEnvio && (
+                <span className="relative mt-1.5 inline-block w-32">
+                  <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">
+                    L
+                  </span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step={0.01}
+                    value={valorFlete}
+                    placeholder="0.00"
+                    onChange={(e) => setValorFlete(e.target.value)}
+                    onClick={(e) => e.preventDefault()}
+                    className="pl-6 h-8 text-sm"
+                  />
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
+
+        {/* Desglose de Pago (multi-metodo) — oculto en venta a credito */}
+        {esCredito ? (
+          <div className="px-4 py-3 border-b">
+            <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 leading-tight">
+              <HandCoins className="h-3 w-3 inline mr-1" />
+              Venta a credito: sin cobro, sin desglose de pago. Total L 0.00.
+            </p>
+          </div>
+        ) : (
         <div className="px-4 py-3 border-b space-y-3">
           <div className="flex items-center justify-between">
             <Label className="text-sm font-medium">Desglose de Pago</Label>
@@ -1831,6 +1959,7 @@ export default function NuevaVentaPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Totals
             El "Total cobrado" prominente es lo que paga el cliente.
@@ -1869,12 +1998,31 @@ export default function NuevaVentaPage() {
             <Separator />
             <div className="flex justify-between items-baseline">
               <span className="text-base md:text-lg font-semibold">
-                Total cobrado
+                {esCredito ? "Total (credito)" : "Total cobrado"}
               </span>
-              <span className="text-2xl md:text-3xl font-bold text-primary">
-                L {total.toFixed(2)}
-              </span>
+              {esCredito ? (
+                <span className="flex items-baseline gap-2">
+                  <span className="text-sm text-muted-foreground line-through">
+                    L {total.toFixed(2)}
+                  </span>
+                  <span className="text-2xl md:text-3xl font-bold text-primary">
+                    L 0.00
+                  </span>
+                </span>
+              ) : (
+                <span className="text-2xl md:text-3xl font-bold text-primary">
+                  L {total.toFixed(2)}
+                </span>
+              )}
             </div>
+            {esEnvio && Number(valorFlete) > 0 && (
+              <div className="flex justify-between text-xs md:text-sm">
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Truck className="h-3 w-3" /> Flete (descuenta al emprendedor)
+                </span>
+                <span>L {Number(valorFlete).toFixed(2)}</span>
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}

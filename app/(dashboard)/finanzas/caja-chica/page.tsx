@@ -58,13 +58,18 @@ import {
   registrarMovimientoCaja,
   getMovimientosSesion,
   getHistoricoSesiones,
+  getConteosSesion,
   type CajaMovimiento,
   type CajaMovimientoTipo,
   type CajaSesionHistorico,
+  type CajaConteo,
   CAJA_FEATURE_PENDING,
 } from "@/lib/services/caja-chica"
+import { DENOMINACIONES_LEMPIRA } from "@/lib/constants/denominaciones"
 import { useCajaSesion } from "@/lib/hooks/use-caja-sesion"
 import { getCuentas, type CuentaConfig } from "@/lib/services/cuentas"
+import { ConteoBilletes as ConteoBilletesInput } from "@/components/conteo-billetes"
+import { conteoVacio, totalConteo, type ConteoBilletes as ConteoBilletesType } from "@/lib/constants/denominaciones"
 
 const ALERTA_SALDO = 5000
 
@@ -155,6 +160,7 @@ export default function CajaChicaPage() {
     useState<CajaSesionHistorico | null>(null)
   const [detalleMovs, setDetalleMovs] = useState<CajaMovimiento[]>([])
   const [loadingDetalle, setLoadingDetalle] = useState(false)
+  const [detalleConteos, setDetalleConteos] = useState<{ apertura: CajaConteo | null; cierre: CajaConteo | null }>({ apertura: null, cierre: null })
 
   // Dialog states
   const [openAbrir, setOpenAbrir] = useState(false)
@@ -164,14 +170,16 @@ export default function CajaChicaPage() {
   const [submitting, setSubmitting] = useState(false)
 
   // Form states
-  const [saldoInicial, setSaldoInicial] = useState<string>("0")
   const [ingresoMonto, setIngresoMonto] = useState<string>("")
   const [ingresoConcepto, setIngresoConcepto] = useState<string>("")
   const [salidaMonto, setSalidaMonto] = useState<string>("")
   const [salidaConcepto, setSalidaConcepto] = useState<string>("")
   const [salidaTransferencia, setSalidaTransferencia] = useState(false)
   const [salidaCuentaId, setSalidaCuentaId] = useState<string>("")
-  const [cierreSaldoReal, setCierreSaldoReal] = useState<string>("")
+
+  // Conteo fisico de billetes (Lempiras) para apertura y cierre.
+  const [conteoApertura, setConteoApertura] = useState<ConteoBilletesType>(conteoVacio())
+  const [conteoCierre, setConteoCierre] = useState<ConteoBilletesType>(conteoVacio())
 
   const reload = useCallback(async () => {
     // 1) Refrescamos la sesion para tener el saldo y estado al dia.
@@ -259,9 +267,14 @@ export default function CajaChicaPage() {
   async function openDetalleSesion(sesion: CajaSesionHistorico) {
     setDetalleSesion(sesion)
     setDetalleMovs([])
+    setDetalleConteos({ apertura: null, cierre: null })
     setLoadingDetalle(true)
-    const { data } = await getMovimientosSesion(sesion.sesion_id, 500, "asc")
+    const [{ data }, conteos] = await Promise.all([
+      getMovimientosSesion(sesion.sesion_id, 500, "asc"),
+      getConteosSesion(sesion.sesion_id),
+    ])
     setDetalleMovs(data)
+    setDetalleConteos(conteos)
     setLoadingDetalle(false)
   }
 
@@ -279,17 +292,9 @@ export default function CajaChicaPage() {
   // ----- Handlers ---------------------------------------------------------
 
   async function handleAbrir() {
-    const monto = Number(saldoInicial)
-    if (Number.isNaN(monto) || monto < 0) {
-      toast({
-        title: "Saldo invalido",
-        description: "Ingrese un saldo inicial >= 0",
-        variant: "destructive",
-      })
-      return
-    }
+    const monto = totalConteo(conteoApertura)
     setSubmitting(true)
-    const { error } = await abrirSesion(monto)
+    const { error } = await abrirSesion(monto, conteoApertura)
     setSubmitting(false)
     if (error) {
       toast({ title: "Error", description: error, variant: "destructive" })
@@ -297,7 +302,7 @@ export default function CajaChicaPage() {
     }
     toast({ title: "Caja abierta", description: `Saldo inicial: ${formatCurrency(monto)}` })
     setOpenAbrir(false)
-    setSaldoInicial("0")
+    setConteoApertura(conteoVacio())
     await reload()
   }
 
@@ -374,19 +379,12 @@ export default function CajaChicaPage() {
 
   async function handleCierre() {
     if (!sesion?.id) return
-    const real = Number(cierreSaldoReal)
-    if (Number.isNaN(real) || real < 0) {
-      toast({
-        title: "Saldo invalido",
-        description: "Ingrese el saldo final real",
-        variant: "destructive",
-      })
-      return
-    }
+    const real = totalConteo(conteoCierre)
     setSubmitting(true)
     const { error } = await cerrarSesion({
       sesion_id: sesion.id,
       saldo_final_real: real,
+      conteo: conteoCierre,
     })
     setSubmitting(false)
     if (error) {
@@ -402,7 +400,7 @@ export default function CajaChicaPage() {
           : `Diferencia: ${formatCurrency(diff)}`,
     })
     setOpenCierre(false)
-    setCierreSaldoReal("")
+    setConteoCierre(conteoVacio())
     await reload()
     // Si el usuario tiene abierto el tab de historial (poco comun en el
     // mismo flujo, pero posible), refrescamos los totales.
@@ -413,8 +411,9 @@ export default function CajaChicaPage() {
 
   const saldoExcedido = saldoActual > ALERTA_SALDO
   const cierreCalculado = saldoActual
-  const cierreReal = Number(cierreSaldoReal || 0)
+  const cierreReal = totalConteo(conteoCierre)
   const cierreDiferencia = +(cierreReal - cierreCalculado).toFixed(2)
+  const cierreConteoIniciado = Object.values(conteoCierre).some((v) => Number(v) > 0)
 
   // ----- Render -----------------------------------------------------------
 
@@ -529,7 +528,7 @@ export default function CajaChicaPage() {
             <div className="md:col-span-2 p-6 flex flex-col gap-3">
               {!sesion ? (
                 <div className="flex-1 flex items-center justify-center">
-                  <Button size="lg" onClick={() => setOpenAbrir(true)}>
+                  <Button size="lg" onClick={() => { setConteoApertura(conteoVacio()); setOpenAbrir(true) }}>
                     <PlayCircle className="mr-2 h-5 w-5" />
                     Abrir Caja
                   </Button>
@@ -553,7 +552,7 @@ export default function CajaChicaPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => setOpenCierre(true)}
+                    onClick={() => { setConteoCierre(conteoVacio()); setOpenCierre(true) }}
                     className="flex-1 sm:flex-none ml-auto"
                   >
                     <StopCircle className="mr-2 h-4 w-4" />
@@ -948,6 +947,41 @@ export default function CajaChicaPage() {
                 </div>
               </div>
 
+              {/* Conteo de billetes (apertura/cierre) */}
+              {(detalleConteos.apertura || detalleConteos.cierre) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(["apertura", "cierre"] as const).map((tipo) => {
+                    const conteo = detalleConteos[tipo]
+                    if (!conteo) return null
+                    return (
+                      <div key={tipo} className="rounded-lg border p-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 capitalize">
+                          Conteo de {tipo}
+                        </p>
+                        <div className="space-y-0.5">
+                          {DENOMINACIONES_LEMPIRA.filter(
+                            (d) => Number(conteo.detalle[String(d)]) > 0
+                          ).map((d) => (
+                            <div key={d} className="flex justify-between text-xs">
+                              <span className="text-muted-foreground">
+                                L {d} × {conteo.detalle[String(d)]}
+                              </span>
+                              <span className="tabular-nums">
+                                L {(d * Number(conteo.detalle[String(d)])).toFixed(2)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between text-sm font-semibold border-t mt-2 pt-1">
+                          <span>Total</span>
+                          <span className="font-mono">{formatCurrency(conteo.total)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* Tabla de movimientos */}
               {loadingDetalle ? (
                 <div className="flex justify-center py-10">
@@ -1019,26 +1053,15 @@ export default function CajaChicaPage() {
 
       {/* Dialog: Abrir caja */}
       <Dialog open={openAbrir} onOpenChange={setOpenAbrir}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Abrir Caja</DialogTitle>
             <DialogDescription>
-              Registra el saldo de efectivo con el que inicia el dia.
+              Cuenta los billetes con los que inicia el dia. El saldo inicial se calcula automaticamente.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="abrir-saldo">Saldo inicial (L)</Label>
-              <Input
-                id="abrir-saldo"
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step={0.01}
-                value={saldoInicial}
-                onChange={(e) => setSaldoInicial(e.target.value)}
-              />
-            </div>
+          <div className="py-2">
+            <ConteoBilletesInput value={conteoApertura} onChange={setConteoApertura} />
           </div>
           <DialogFooter className="gap-2 sm:gap-2">
             <Button
@@ -1211,7 +1234,7 @@ export default function CajaChicaPage() {
             <div className="rounded-lg border p-3 bg-muted/30">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  Saldo calculado:
+                  Efectivo segun sistema:
                 </span>
                 <span className="font-mono font-semibold">
                   {formatCurrency(cierreCalculado)}
@@ -1219,38 +1242,32 @@ export default function CajaChicaPage() {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="cierre-real">Saldo real contado (L)</Label>
-              <Input
-                id="cierre-real"
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step={0.01}
-                value={cierreSaldoReal}
-                onChange={(e) => setCierreSaldoReal(e.target.value)}
-              />
-            </div>
+            <ConteoBilletesInput value={conteoCierre} onChange={setConteoCierre} />
 
-            {cierreSaldoReal !== "" && (
+            {cierreConteoIniciado && (
               <div
                 className={`rounded-lg border p-3 text-sm ${
                   Math.abs(cierreDiferencia) < 0.005
                     ? "border-emerald-200 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-200"
-                    : "border-amber-200 bg-amber-50 text-amber-900 dark:bg-amber-950/20 dark:text-amber-200"
+                    : "border-red-200 bg-red-50 text-red-900 dark:bg-red-950/20 dark:text-red-200"
                 }`}
               >
                 <div className="flex justify-between">
-                  <span>Diferencia:</span>
+                  <span>Diferencia (contado vs sistema):</span>
                   <span className="font-mono font-semibold">
                     {cierreDiferencia >= 0 ? "+" : ""}
                     {formatCurrency(cierreDiferencia)}
                   </span>
                 </div>
+                {Math.abs(cierreDiferencia) >= 0.005 && (
+                  <p className="mt-1 text-xs">
+                    Se registrara esta diferencia al cerrar. Puedes recontar antes de continuar.
+                  </p>
+                )}
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2 sm:gap-2">
+          <DialogFooter className="gap-2 sm:gap-2 flex-wrap">
             <Button
               variant="outline"
               onClick={() => setOpenCierre(false)}
@@ -1259,10 +1276,18 @@ export default function CajaChicaPage() {
               Cancelar
             </Button>
             <Button
-              onClick={handleCierre}
-              disabled={submitting || cierreSaldoReal === ""}
+              variant="outline"
+              onClick={() => setConteoCierre(conteoVacio())}
+              disabled={submitting}
             >
-              {submitting && <Spinner className="mr-2" />}Cerrar Caja
+              Recontar
+            </Button>
+            <Button
+              onClick={handleCierre}
+              disabled={submitting || !cierreConteoIniciado}
+            >
+              {submitting && <Spinner className="mr-2" />}
+              {Math.abs(cierreDiferencia) >= 0.005 ? "Aprobar y cerrar caja" : "Cerrar Caja"}
             </Button>
           </DialogFooter>
         </DialogContent>

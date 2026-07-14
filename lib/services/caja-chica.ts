@@ -6,6 +6,7 @@ import {
 } from "@/lib/services/tenant-stamp"
 import { registrarMovimientoCuenta } from "@/lib/services/cuentas"
 import { getHondurasNowISO } from "@/lib/utils/honduras-time"
+import { totalConteo, type ConteoBilletes } from "@/lib/constants/denominaciones"
 
 // ==================== INTERFACES ====================
 
@@ -78,12 +79,58 @@ export interface CajaSesionHistorico {
   diferencia: number | null
 }
 
+/** Conteo fisico de billetes persistido en `caja_chica_conteos` (migracion 022). */
+export interface CajaConteo {
+  id?: number
+  sesion_id: number
+  tipo: "Apertura" | "Cierre"
+  detalle: ConteoBilletes
+  total: number
+  usuario?: string
+  created_at?: string
+}
+
 export const CAJA_FEATURE_PENDING = "feature_pending"
 
 function isMissingTableError(err: { message?: string } | null): boolean {
   if (!err?.message) return false
   return /relation .*(caja_chica_sesiones|caja_chica_movimientos).* does not exist|caja_chica_sesiones|caja_chica_movimientos/i
     .test(err.message)
+}
+
+/**
+ * Guarda (upsert) el conteo de billetes de una sesion. Best-effort: si la
+ * tabla `caja_chica_conteos` aun no existe (migracion 022 pendiente), no
+ * bloquea la apertura/cierre — solo deja de persistir el detalle.
+ */
+async function guardarConteo(
+  sesion_id: number,
+  tipo: "Apertura" | "Cierre",
+  detalle: ConteoBilletes,
+  usuario?: string | null
+): Promise<void> {
+  const supabase = createClient()
+  if (!supabase) return
+  const stamp = await getTenantStamp(supabase)
+  if (!isValidStamp(stamp)) return
+
+  const { error } = await supabase
+    .from("caja_chica_conteos")
+    .upsert(
+      {
+        sesion_id,
+        tipo,
+        detalle,
+        total: totalConteo(detalle),
+        usuario: usuario ?? stamp.usuario,
+        razon_social_id: stamp.razon_social_id,
+      },
+      { onConflict: "sesion_id,tipo" }
+    )
+
+  if (error && !/caja_chica_conteos/i.test(error.message || "")) {
+    console.warn("[caja-chica] No se pudo guardar el conteo de billetes:", error.message)
+  }
 }
 
 // ==================== SESIONES ====================
@@ -127,7 +174,8 @@ export async function getSesionAbierta(): Promise<{
 }
 
 export async function abrirSesion(
-  saldo_inicial: number
+  saldo_inicial: number,
+  conteo?: ConteoBilletes
 ): Promise<{ data: CajaSesion | null; error: string | null }> {
   if (saldo_inicial < 0) {
     return { data: null, error: "El saldo inicial no puede ser negativo" }
@@ -193,12 +241,17 @@ export async function abrirSesion(
       created_at: nowHN,
     })
 
+  if (conteo && sesion?.id) {
+    await guardarConteo(sesion.id, "Apertura", conteo, stamp.usuario)
+  }
+
   return { data: sesion as CajaSesion, error: null }
 }
 
 export async function cerrarSesion(input: {
   sesion_id: number
   saldo_final_real: number
+  conteo?: ConteoBilletes
 }): Promise<{ data: CajaSesion | null; error: string | null }> {
   const supabase = createClient()
   if (!supabase) return { data: null, error: "Cliente no disponible" }
@@ -246,6 +299,11 @@ export async function cerrarSesion(input: {
     .single()
 
   if (error) return { data: null, error: error.message }
+
+  if (input.conteo) {
+    await guardarConteo(input.sesion_id, "Cierre", input.conteo, stamp.usuario)
+  }
+
   return { data: data as CajaSesion, error: null }
 }
 
@@ -543,4 +601,30 @@ export async function getHistoricoSesiones(
 export async function puedeRegistrarVentaEfectivo(): Promise<boolean> {
   const { data } = await getSesionAbierta()
   return !!data?.id
+}
+
+/**
+ * Conteos de billetes (apertura/cierre) de una sesion, para mostrarlos en
+ * el detalle del historico. Devuelve null en cada slot si no se guardo
+ * conteo (ej. sesiones creadas antes de la migracion 022) o si la tabla
+ * aun no existe.
+ */
+export async function getConteosSesion(
+  sesion_id: number
+): Promise<{ apertura: CajaConteo | null; cierre: CajaConteo | null }> {
+  const supabase = createClient()
+  if (!supabase) return { apertura: null, cierre: null }
+
+  const { data, error } = await supabase
+    .from("caja_chica_conteos")
+    .select("*")
+    .eq("sesion_id", sesion_id)
+
+  if (error || !data) return { apertura: null, cierre: null }
+
+  const rows = data as CajaConteo[]
+  return {
+    apertura: rows.find((r) => r.tipo === "Apertura") ?? null,
+    cierre: rows.find((r) => r.tipo === "Cierre") ?? null,
+  }
 }

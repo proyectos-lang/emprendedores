@@ -32,6 +32,7 @@ import {
   Store,
   ListChecks,
   CreditCard,
+  Banknote,
   type LucideIcon,
 } from "lucide-react"
 
@@ -150,6 +151,12 @@ export const MODULOS: ReadonlyArray<ModuloGranular> = [
     href: "/aprobaciones",
     categoria: "Concept Store",
     icon: ListChecks,
+  },
+  {
+    nombre: "Liquidaciones",
+    href: "/concept-store/liquidaciones",
+    categoria: "Concept Store",
+    icon: Banknote,
   },
 ] as const
 

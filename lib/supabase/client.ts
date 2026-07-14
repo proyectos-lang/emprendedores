@@ -24,7 +24,7 @@ export function createClient(): SupabaseClient | null {
 
   if (!browserClient) {
     browserClient = createBrowserClient(supabaseUrl, supabaseAnonKey, {
-      db: { schema: 'colmena' },
+      db: { schema: 'emprendedores' },
     })
   }
 

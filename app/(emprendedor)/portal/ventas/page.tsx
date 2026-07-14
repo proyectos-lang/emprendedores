@@ -24,7 +24,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts"
-import { Download, DollarSign, Package, ShoppingBag, TrendingUp, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
+import { Download, DollarSign, Package, ShoppingBag, TrendingUp, ChevronLeft, ChevronRight, CheckCircle2, Truck } from "lucide-react"
 import { format, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { es } from "date-fns/locale"
 import * as XLSX from "xlsx"
@@ -186,6 +186,8 @@ export default function VentasEmprendedorPage() {
       "Precio Unitario": v.precio_unitario,
       "Descuento (%)": (v.descuentodetalle ?? 0) > 0 ? (v.descuentodetalle ?? 0) : (v.descuento ?? 0),
       Subtotal: subtotalFinal(v),
+      Envio: v.es_envio ? "Si" : "No",
+      "Flete descontado": v.es_envio ? v.valor_flete : 0,
     }))
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
@@ -443,7 +445,17 @@ export default function VentasEmprendedorPage() {
                         <TableCell className="text-sm text-stone-600 whitespace-nowrap">
                           {format(new Date(v.fecha_venta), "dd/MM/yyyy")}
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-stone-500">{v.numero_factura}</TableCell>
+                        <TableCell className="font-mono text-xs text-stone-500">
+                          {v.numero_factura}
+                          {v.es_envio && (
+                            <span
+                              className="ml-1 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-sky-50 text-sky-700"
+                              title={`Envio: flete L ${v.valor_flete.toFixed(2)} descontado de tu liquidacion`}
+                            >
+                              <Truck className="h-2.5 w-2.5" /> {fmoney(v.valor_flete)}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell><MetodoPagoBadge metodo={v.metodo_pago} /></TableCell>
                         <TableCell className="font-medium text-stone-700">{v.producto_nombre}</TableCell>
                         <TableCell className="font-mono text-xs text-stone-500">{v.codigo_barras || "—"}</TableCell>
