@@ -125,7 +125,7 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl md:text-2xl font-semibold text-stone-800">Dashboard Colmena</h1>
+          <h1 className="text-xl md:text-2xl font-semibold text-stone-800">Dashboard</h1>
           <p className="text-xs md:text-sm text-stone-500 leading-relaxed">
             Vista general de la operación de la concept store
           </p>

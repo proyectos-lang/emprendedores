@@ -38,7 +38,7 @@ const CartContext = React.createContext<CartContextValue>({
   eliminarCarrito: () => {},
 })
 
-const STORAGE_KEY = "colmena_carritos_temporales"
+const STORAGE_KEY = "emprendedores_carritos_temporales"
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartesTemporales, setCartesTemporales] = React.useState<CarritoTemporal[]>(() => {

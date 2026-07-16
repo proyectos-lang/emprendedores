@@ -1,7 +1,6 @@
-# Estructura de Base de Datos Supabase — EasyCount / Colmena
+# Estructura de Base de Datos Supabase — EasyCount / Emprendedores
 
-> Esquema actual en producción: **`colmena`**
-> Para el nuevo proyecto cambia todas las referencias de `colmena` → `emprendedores`
+> Esquema actual en producción: **`emprendedores`**
 
 ---
 

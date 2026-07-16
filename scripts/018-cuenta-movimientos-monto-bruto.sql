@@ -6,5 +6,5 @@
 --
 -- INSTRUCCIONES: ejecutar este script en el SQL Editor de Supabase.
 
-ALTER TABLE colmena.cuenta_movimientos
+ALTER TABLE emprendedores.cuenta_movimientos
   ADD COLUMN IF NOT EXISTS monto_bruto NUMERIC(14,2);

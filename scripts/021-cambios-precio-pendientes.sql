@@ -6,11 +6,11 @@
 --
 -- INSTRUCCIONES: ejecutar en el SQL Editor de Supabase antes del deploy.
 
-CREATE TABLE IF NOT EXISTS colmena.cambios_precio_pendientes (
+CREATE TABLE IF NOT EXISTS emprendedores.cambios_precio_pendientes (
   id                BIGSERIAL PRIMARY KEY,
-  emprendimiento_id INT  NOT NULL REFERENCES colmena.emprendimientos(id),
+  emprendimiento_id INT  NOT NULL REFERENCES emprendedores.emprendimientos(id),
   razon_social_id   INT  NOT NULL,
-  producto_id       INT  NOT NULL REFERENCES colmena.productos(id),
+  producto_id       INT  NOT NULL REFERENCES emprendedores.productos(id),
   producto_nombre   TEXT NOT NULL,
   codigo_barras     TEXT NOT NULL,
   precio_actual     NUMERIC(12,2) NOT NULL,

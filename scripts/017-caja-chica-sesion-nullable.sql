@@ -7,5 +7,5 @@
 --
 -- INSTRUCCIONES: ejecutar este script en el SQL Editor de Supabase.
 
-ALTER TABLE colmena.caja_chica_movimientos
+ALTER TABLE emprendedores.caja_chica_movimientos
   ALTER COLUMN sesion_id DROP NOT NULL;

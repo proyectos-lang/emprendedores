@@ -798,9 +798,9 @@ GROUP BY EXTRACT(YEAR FROM g.fecha_gasto), EXTRACT(MONTH FROM g.fecha_gasto);
 -- ============================================================
 -- Ejecutar solo si vas a operar este esquema como un tenant nuevo e
 -- independiente (crea admin@easycount.com / admin123 en auth.users y lo
--- enlaza a emprendedores.usuarios con permiso total sobre los 22 modulos).
--- Si "emprendedores" es un esquema secundario que comparte usuarios admin
--- con "colmena", omite este paso y crea el registro manualmente.
+-- enlaza a emprendedores.usuarios con permiso total sobre los modulos).
+-- Si ya existe un usuario admin que quieres reutilizar en este esquema,
+-- omite este paso y crea el registro manualmente.
 
 DO $$
 DECLARE
@@ -846,8 +846,5 @@ END $$;
 -- ============================================================
 -- FIN
 -- ============================================================
--- Recordatorio: si quieres que la app APUNTE a este esquema en vez de
--- "colmena", hay que cambiar `db: { schema: 'emprendedores' }` en:
---   lib/supabase/client.ts, lib/supabase/server.ts, lib/supabase/admin.ts
--- (esto NO esta incluido aqui a proposito, ya que el ultimo commit revirtio
--- ese cambio de vuelta a "colmena" — avisame si quieres que lo aplique).
+-- La app ya apunta a este esquema: `db: { schema: 'emprendedores' }` en
+-- lib/supabase/client.ts, lib/supabase/server.ts y lib/supabase/admin.ts.

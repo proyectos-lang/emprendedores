@@ -17,23 +17,23 @@
 --
 -- INSTRUCCIONES: ejecutar en el SQL Editor de Supabase.
 
-ALTER TABLE colmena.ventas_encabezado
+ALTER TABLE emprendedores.ventas_encabezado
   ADD COLUMN IF NOT EXISTS metodo_pago TEXT
   CHECK (metodo_pago IN ('Efectivo','Banco','Link_Pago','Credito','Mixto','Otro'));
 
 -- Backfill histórico: calcular desde ventas_pagos_detalle existentes.
 -- Ventas sin filas en ventas_pagos_detalle quedan con NULL (correcto).
-UPDATE colmena.ventas_encabezado ve
+UPDATE emprendedores.ventas_encabezado ve
 SET metodo_pago = (
   SELECT CASE WHEN COUNT(DISTINCT p.metodo_pago) > 1 THEN 'Mixto'
               ELSE MAX(p.metodo_pago)
          END
-  FROM colmena.ventas_pagos_detalle p
+  FROM emprendedores.ventas_pagos_detalle p
   WHERE p.venta_id = ve.id
 )
 WHERE ve.metodo_pago IS NULL
-  AND EXISTS (SELECT 1 FROM colmena.ventas_pagos_detalle WHERE venta_id = ve.id);
+  AND EXISTS (SELECT 1 FROM emprendedores.ventas_pagos_detalle WHERE venta_id = ve.id);
 
 -- Índice para filtros en historial y cierre diario
 CREATE INDEX IF NOT EXISTS idx_ventas_enc_metodo_pago
-  ON colmena.ventas_encabezado(razon_social_id, metodo_pago);
+  ON emprendedores.ventas_encabezado(razon_social_id, metodo_pago);

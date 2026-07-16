@@ -139,11 +139,11 @@ function printReciboTermico(
       </div>`
   }).join('<div class="line-dash"></div>')
 
-  const empresa         = (razonSocial?.nombre_empresa   || 'COLMENA').toUpperCase()
-  const nombreComercial =  razonSocial?.nombre_comercial || 'COLMENA HONDURAS S DE RL DE CV'
-  const direccion       =  razonSocial?.direccion        || 'San Pedro Sula Honduras C. A.'
-  const telefono        =  razonSocial?.telefono         || '+(504) 9491-0754'
-  const rtn             = '05019025183906'
+  const empresa         = (razonSocial?.nombre_empresa   || 'MI EMPRESA').toUpperCase()
+  const nombreComercial =  razonSocial?.nombre_comercial || ''
+  const direccion       =  razonSocial?.direccion        || ''
+  const telefono        =  razonSocial?.telefono         || ''
+  const rtn             =  razonSocial?.documento        || ''
 
   const html = `<!DOCTYPE html>
 <html lang="es">

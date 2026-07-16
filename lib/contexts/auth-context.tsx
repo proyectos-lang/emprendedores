@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!perfil) {
           console.log("[v0] No se encontro perfil en 'usuarios' para auth_user_id:", authUserId)
-          throw new Error(`[usuarios vacio] No existe row en colmena.usuarios con id=${authUserId}`)
+          throw new Error(`[usuarios vacio] No existe row en emprendedores.usuarios con id=${authUserId}`)
         }
 
         if (perfil.activo === false) {

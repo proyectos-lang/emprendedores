@@ -3,15 +3,14 @@
 -- "Unrestricted" (sin RLS) Y con permisos para que anon/authenticated
 -- puedan leer/escribir via PostgREST. Cubre tablas presentes y futuras.
 -- ================================================================
--- Coherente con el esquema "colmena" en produccion: ese tampoco usa RLS,
--- el control de acceso se hace 100% en la capa de la app (getTenantStamp()
+-- El control de acceso se hace 100% en la capa de la app (getTenantStamp()
 -- + razon_social_id), no a nivel de Postgres.
 --
 -- Nota de seguridad: con esto cualquiera con la ANON key puede leer/escribir
--- directamente cualquier tabla via PostgREST. Es igual al comportamiento
--- actual de "colmena", no es un riesgo nuevo — solo lo señalo por si en
--- algun momento quieres blindar esto con policies en vez de confiar solo
--- en el aislamiento a nivel de aplicacion.
+-- directamente cualquier tabla via PostgREST — no hay una segunda capa de
+-- proteccion a nivel de Postgres. Lo señalo por si en algun momento quieres
+-- blindar esto con policies en vez de confiar solo en el aislamiento a
+-- nivel de aplicacion.
 --
 -- Seguro de re-ejecutar (todo es idempotente).
 -- ================================================================

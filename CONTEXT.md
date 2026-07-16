@@ -1,4 +1,4 @@
-# EasyCount Colmena — Contexto del Proyecto y Registro de Cambios
+# EasyCount Emprendedores — Contexto del Proyecto y Registro de Cambios
 
 ## Descripción General
 
@@ -110,21 +110,34 @@ Tablas conocidas del esquema actual:
 
 ### Sesión 1 — 2026-06-10
 
-**Objetivo:** Conectar la aplicación al esquema `colmena` del proyecto Supabase `qpwjwfparpupfyuxoskx`.
+**Objetivo:** Conectar la aplicación al esquema `emprendedores` del proyecto Supabase `qpwjwfparpupfyuxoskx`.
 
 **Cambios aplicados:**
 
-1. **`.env.local` creado** con las 4 variables de entorno del nuevo proyecto Supabase.
+1. **`.env.local` creado** con las 4 variables de entorno del proyecto Supabase.
 
-2. **`lib/supabase/client.ts`** — Agregado `db: { schema: 'colmena' }` al `createBrowserClient`.
-3. **`lib/supabase/server.ts`** — Agregado `db: { schema: 'colmena' }` al `createServerClient`.
-4. **`lib/supabase/admin.ts`** — Agregado `db: { schema: 'colmena' }` al `createSupabaseClient`.
+2. **`lib/supabase/client.ts`** — Agregado `db: { schema: 'emprendedores' }` al `createBrowserClient`.
+3. **`lib/supabase/server.ts`** — Agregado `db: { schema: 'emprendedores' }` al `createServerClient`.
+4. **`lib/supabase/admin.ts`** — Agregado `db: { schema: 'emprendedores' }` al `createSupabaseClient`.
 
-**Por qué solo esos 3 archivos:** El SDK de Supabase JS usa `public` como esquema por defecto. Con `db: { schema: 'colmena' }` cada llamada `.from('tabla')` apunta a `colmena.tabla` automáticamente — no se requiere cambiar ningún servicio.
+**Por qué solo esos 3 archivos:** El SDK de Supabase JS usa `public` como esquema por defecto. Con `db: { schema: 'emprendedores' }` cada llamada `.from('tabla')` apunta a `emprendedores.tabla` automáticamente — no se requiere cambiar ningún servicio.
 
-**Compatibilidad verificada:** El código de la app ya usa los nombres de tablas del esquema `colmena` (`caja_chica_movimientos`, `caja_chica_sesiones`, `ventas_pagos_detalle`, `subcategorias`, `cuenta_movimientos`).
+**Compatibilidad verificada:** El código de la app ya usa los nombres de tablas del esquema `emprendedores` (`caja_chica_movimientos`, `caja_chica_sesiones`, `ventas_pagos_detalle`, `subcategorias`, `cuenta_movimientos`).
 
-**Punto a vigilar:** Las tablas `localizaciones` y `caja_chica_sesiones` en `colmena` no tienen FK explícita a `razon_social` según el esquema. El código actual stampa `razon_social_id` en inserts de localizaciones; si esa columna no existe en `colmena.localizaciones`, fallará al crear localizaciones nuevas. A confirmar con prueba.
+**Punto a vigilar:** Las tablas `localizaciones` y `caja_chica_sesiones` en `emprendedores` no tienen FK explícita a `razon_social` según el esquema. El código actual stampa `razon_social_id` en inserts de localizaciones; si esa columna no existe en `emprendedores.localizaciones`, fallará al crear localizaciones nuevas. A confirmar con prueba.
+
+---
+
+### Sesión 2 — 2026-07-16
+
+**Objetivo:** Independizar el proyecto por completo (código, base de datos y repositorio) de "Colmena".
+
+**Cambios aplicados:**
+
+1. Se agregaron 4 funcionalidades nuevas: liquidaciones semanales a emprendedores, conteo de billetes en apertura/cierre de caja, venta a crédito y envíos con flete (ver `scripts/022-liquidaciones-conteo-caja-credito-envio.sql`).
+2. Se eliminaron todas las menciones a "Colmena" del código en ejecución: título del Dashboard, datos de fallback del recibo térmico (incluía un RTN, teléfono y dirección reales hardcodeados que se imprimían en cada factura sin importar la razón social configurada), mensajes de error internos y la clave de `localStorage` de carritos temporales.
+3. Se actualizó este changelog y `SUPABASE_SCHEMA.md`, y se renombraron las referencias a `colmena.tabla` en los scripts de migración históricos (`017`–`021`) a `emprendedores.tabla`.
+4. El repositorio ahora vive en `https://github.com/proyectos-lang/emprendedores.git` (antes compartía remoto con `colmena.git`).
 
 ---
 

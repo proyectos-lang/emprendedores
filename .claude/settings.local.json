@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(powershell -Command \"Select-String -Path 'C:\\\\Users\\\\Personal\\\\easycountcolmena\\\\lib\\\\services\\\\ventas.ts' -Pattern '^}' | Select-Object -Last 3\")"
+      "Bash(powershell -Command \"Select-String -Path 'C:\\\\Users\\\\Personal\\\\emprendedores\\\\lib\\\\services\\\\ventas.ts' -Pattern '^}' | Select-Object -Last 3\")"
     ]
   }
 }

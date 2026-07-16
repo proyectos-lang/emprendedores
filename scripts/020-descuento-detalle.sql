@@ -10,5 +10,5 @@
 --
 -- INSTRUCCIONES: ejecutar en el SQL Editor de Supabase.
 
-ALTER TABLE colmena.ventas_detalle
+ALTER TABLE emprendedores.ventas_detalle
   ADD COLUMN IF NOT EXISTS descuentodetalle NUMERIC(5,2) DEFAULT 0;
