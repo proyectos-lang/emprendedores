@@ -321,6 +321,61 @@ export async function getProductoPorCodigo(
   }
 }
 
+/**
+ * Busca un producto por ID exacto y devuelve el stock real desde
+ * vista_stock_por_localizacion. Mismo patron que getProductoPorCodigo,
+ * pero por ID — usado cuando el usuario elige un producto de una lista
+ * de resultados (busqueda por nombre) en vez de escribir el codigo exacto.
+ */
+export async function getProductoPorId(
+  id: number
+): Promise<{ data: Producto | null; error: string | null }> {
+  if (!isSupabaseConfigured()) {
+    const saved = localStorage.getItem('productos')
+    const all: Producto[] = saved ? JSON.parse(saved) : []
+    const found = all.find(p => p.id === id)
+    return { data: found ?? null, error: found ? null : 'Producto no encontrado' }
+  }
+
+  const supabase = createClient()
+  if (!supabase) return { data: null, error: 'Cliente no disponible' }
+
+  try {
+    const { data, error } = await supabase
+      .from('productos')
+      .select('*, marcas(nombre), categorias(nombre), emprendimientos(nombre)')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (error) return { data: null, error: error.message }
+    if (!data) return { data: null, error: 'Producto no encontrado' }
+
+    const { data: stockRows } = await supabase
+      .from('vista_stock_por_localizacion')
+      .select('stock_actual')
+      .eq('producto_id', data.id)
+
+    const stockTotal = (stockRows ?? []).reduce(
+      (sum: number, row: any) => sum + (row.stock_actual ?? 0), 0
+    )
+
+    const producto: Producto = {
+      ...data,
+      stock_total: stockTotal,
+      costo_promedio: data.costo_promedio ?? 0,
+      marca_nombre: data.marcas?.nombre ?? null,
+      categoria_nombre: data.categorias?.nombre ?? null,
+      emprendimiento_nombre: data.emprendimientos?.nombre ?? null,
+      marcas: undefined,
+      categorias: undefined,
+      emprendimientos: undefined,
+    }
+    return { data: producto, error: null }
+  } catch {
+    return { data: null, error: 'Error de conexión' }
+  }
+}
+
 export async function saveProducto(
   producto: Producto,
   isNew: boolean

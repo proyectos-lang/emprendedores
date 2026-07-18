@@ -520,6 +520,9 @@ function ProductGrid({ productos, idsEnVenta, cola, onAdd, disabled, getStock, s
             </div>
             <div className="flex flex-col gap-0.5 p-1.5 min-w-0">
               <p className="text-[11px] font-medium leading-tight line-clamp-2 break-words">{p.nombre}</p>
+              {p.codigo_barras && (
+                <p className="text-[10px] text-muted-foreground font-mono truncate">{p.codigo_barras}</p>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-x-1 gap-y-0.5 mt-0.5">
                 <span className="text-[11px] font-bold text-primary whitespace-nowrap">
                   L {(p.precio_venta_sugerido ?? 0).toFixed(2)}

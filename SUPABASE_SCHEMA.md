@@ -465,7 +465,7 @@ Bancos y links de pago con su % de comisión.
 | `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE | Multi-tenant |
 | `nombre` | `TEXT` | NOT NULL | Ej: `"BAC Honduras"` |
 | `tipo` | `TEXT` | NOT NULL CHECK | `Banco` / `Link_Pago` / `Otro` |
-| `porcentaje_comision` | `NUMERIC(5,2)` | NOT NULL DEFAULT 0 (0–100) | |
+| `comision_porcentaje` | `NUMERIC(5,2)` | NOT NULL DEFAULT 0 (0–100) | Ojo: no `porcentaje_comision` — asi la espera `lib/services/cuentas.ts` |
 | `activo` | `BOOLEAN` | NOT NULL DEFAULT true | |
 | `saldo` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | Saldo running cacheado |
 | `usuario` | `TEXT` | NULL | Auditoría |
@@ -564,6 +564,7 @@ Cada movimiento de efectivo dentro de una sesión.
 | `nombre` | `VARCHAR(100)` | NOT NULL | |
 | `categoria_macro` | `VARCHAR(50)` | NOT NULL CHECK | `Servicios`/`Publicidad`/`Nomina`/`Arriendo`/`Mantenimiento`/`Impuestos`/`Suministros`/`Otros` |
 | `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE | Multi-tenant |
+| `usuario` | `TEXT` | NULL | Auditoría — requerido por `lib/services/gastos.ts` |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
 
 ---
@@ -579,12 +580,14 @@ Cada movimiento de efectivo dentro de una sesión.
 | `metodo_pago` | `VARCHAR(20)` | NOT NULL CHECK | `Efectivo`/`Transferencia`/`Tarjeta` |
 | `descripcion` | `TEXT` | NULL | |
 | `comprobante_url` | `TEXT` | NULL | |
-| `proveedor_nombre` | `TEXT` | NULL | Migración 014 |
-| `numero_factura` | `TEXT` | NULL | Migración 014 |
-| `fecha_vencimiento` | `DATE` | NULL | Migración 014 |
-| `monto_pagado` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | Migración 014 |
-| `estado_pago` | `TEXT` | NOT NULL DEFAULT 'Pendiente' CHECK | `Pendiente`/`Parcial`/`Pagado` — Migración 014 |
+| `proveedor_id` | `INTEGER` | FK → `proveedores(id)` ON DELETE SET NULL | La FK real que usa el código (join `proveedores:proveedor_id`) |
+| `proveedor_nombre` | `TEXT` | NULL | Legado, sin uso en el código actual |
+| `numero_factura` | `TEXT` | NULL | Legado, sin uso en el código actual |
+| `fecha_vencimiento` | `DATE` | NULL | |
+| `monto_pagado` | `NUMERIC(14,2)` | NOT NULL DEFAULT 0 | |
+| `estado_pago` | `TEXT` | NOT NULL DEFAULT 'Pendiente' CHECK | `Pendiente`/`Parcial`/`Pagado` |
 | `razon_social_id` | `INTEGER` | FK → `razon_social(id)` ON DELETE CASCADE | Multi-tenant |
+| `usuario` | `TEXT` | NULL | Auditoría — requerido por `lib/services/gastos.ts` |
 | `created_at` | `TIMESTAMPTZ` | DEFAULT now() | |
 
 ---
@@ -982,8 +985,8 @@ CREATE TABLE IF NOT EXISTS emprendedores.cuentas_config (
   razon_social_id      INTEGER NOT NULL REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
   nombre               TEXT NOT NULL,
   tipo                 TEXT NOT NULL CHECK (tipo IN ('Banco','Link_Pago','Otro')),
-  porcentaje_comision  NUMERIC(5,2) NOT NULL DEFAULT 0
-                       CHECK (porcentaje_comision >= 0 AND porcentaje_comision <= 100),
+  comision_porcentaje  NUMERIC(5,2) NOT NULL DEFAULT 0
+                       CHECK (comision_porcentaje >= 0 AND comision_porcentaje <= 100),
   activo               BOOLEAN NOT NULL DEFAULT true,
   saldo                NUMERIC(14,2) NOT NULL DEFAULT 0,
   usuario              TEXT,
@@ -1141,6 +1144,7 @@ CREATE TABLE IF NOT EXISTS emprendedores.conceptos_gastos (
   nombre          VARCHAR(100) NOT NULL,
   categoria_macro VARCHAR(50) NOT NULL CHECK (categoria_macro IN ('Servicios','Publicidad','Nomina','Arriendo','Mantenimiento','Impuestos','Suministros','Otros')),
   razon_social_id INTEGER REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
+  usuario         TEXT,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
@@ -1152,12 +1156,14 @@ CREATE TABLE IF NOT EXISTS emprendedores.gastos (
   metodo_pago       VARCHAR(20) NOT NULL CHECK (metodo_pago IN ('Efectivo','Transferencia','Tarjeta')),
   descripcion       TEXT,
   comprobante_url   TEXT,
+  proveedor_id      INTEGER REFERENCES emprendedores.proveedores(id) ON DELETE SET NULL,
   proveedor_nombre  TEXT,
   numero_factura    TEXT,
   fecha_vencimiento DATE,
   monto_pagado      NUMERIC(14,2) NOT NULL DEFAULT 0,
   estado_pago       TEXT NOT NULL DEFAULT 'Pendiente' CHECK (estado_pago IN ('Pendiente','Parcial','Pagado')),
   razon_social_id   INTEGER REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
+  usuario           TEXT,
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 

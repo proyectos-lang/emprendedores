@@ -22,7 +22,8 @@ import {
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import {
-  getProductoPorCodigo,
+  getProductoPorId,
+  buscarProductos,
   getAlmacenes, getLocalizaciones,
   type Producto, type Almacen, type Localizacion,
 } from "@/lib/services/catalogos"
@@ -46,11 +47,12 @@ export default function MovimientosManualesPage() {
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
 
-  // ── Búsqueda por código ─────────────────────────────────────
+  // ── Búsqueda por código o nombre ─────────────────────────────
   const [codigoBusqueda, setCodigoBusqueda] = React.useState("")
   const [buscandoProducto, setBuscandoProducto] = React.useState(false)
   const [productoEncontrado, setProductoEncontrado] = React.useState<Producto | null>(null)
   const [errorBusqueda, setErrorBusqueda] = React.useState<string | null>(null)
+  const [resultadosBusqueda, setResultadosBusqueda] = React.useState<Producto[]>([])
 
   // ── Individual ──────────────────────────────────────────────
   const [tipoInd, setTipoInd] = React.useState<TipoMovimiento>("ingreso")
@@ -94,18 +96,46 @@ export default function MovimientosManualesPage() {
   }
 
   async function buscarProducto() {
-    const codigo = codigoBusqueda.trim()
-    if (!codigo) return
+    const texto = codigoBusqueda.trim()
+    if (!texto) return
     setBuscandoProducto(true)
     setProductoEncontrado(null)
     setErrorBusqueda(null)
-    const { data, error } = await getProductoPorCodigo(codigo)
+    setResultadosBusqueda([])
+
+    const { data, error } = await buscarProductos(texto, { limit: 8 })
+    setBuscandoProducto(false)
+
+    if (error) {
+      setErrorBusqueda(error)
+      return
+    }
+    if (data.length === 0) {
+      setErrorBusqueda("Producto no encontrado")
+      return
+    }
+    if (data.length === 1) {
+      await seleccionarProducto(data[0])
+      return
+    }
+    // Varias coincidencias (busqueda por nombre) — el usuario elige.
+    setResultadosBusqueda(data)
+  }
+
+  // Al elegir un producto (de la lista de resultados o cuando la busqueda
+  // resuelve a uno solo), recargamos por ID para traer el stock real desde
+  // vista_stock_por_localizacion (buscarProductos no lo trae autoritativo).
+  async function seleccionarProducto(producto: Producto) {
+    setResultadosBusqueda([])
+    setBuscandoProducto(true)
+    const { data, error } = await getProductoPorId(producto.id!)
     setBuscandoProducto(false)
     if (error || !data) {
       setErrorBusqueda(error ?? "Producto no encontrado")
-    } else {
-      setProductoEncontrado(data)
+      return
     }
+    setProductoEncontrado(data)
+    setCodigoBusqueda(data.codigo_barras || data.nombre)
   }
 
   function handleCodigoKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -208,6 +238,7 @@ export default function MovimientosManualesPage() {
     setCodigoBusqueda("")
     setProductoEncontrado(null)
     setErrorBusqueda(null)
+    setResultadosBusqueda([])
     setFormData(prev => ({
       ...prev,
       cantidad: "",
@@ -306,22 +337,23 @@ export default function MovimientosManualesPage() {
                     <Package className="h-4 w-4 md:h-5 md:w-5 text-amber-600" />
                     Buscar Producto
                   </CardTitle>
-                  <CardDescription>Escriba el código de barras y presione la lupa o Enter</CardDescription>
+                  <CardDescription>Escriba el código de barras o el nombre del producto y presione la lupa o Enter</CardDescription>
                 </CardHeader>
                 <CardContent className="p-4 md:p-6 pt-0 space-y-4">
-                  {/* Buscador por código */}
+                  {/* Buscador por código o nombre */}
                   <div className="space-y-2">
-                    <Label className="text-sm">Código de barras</Label>
+                    <Label className="text-sm">Producto (código o nombre)</Label>
                     <div className="flex gap-2">
                       <Input
-                        placeholder="Escribe el código y presiona Enter o la lupa..."
+                        placeholder="Escribe el código o el nombre y presiona Enter o la lupa..."
                         value={codigoBusqueda}
                         onChange={(e) => {
                           setCodigoBusqueda(e.target.value)
                           if (productoEncontrado) {
                             setProductoEncontrado(null)
-                            setErrorBusqueda(null)
                           }
+                          setErrorBusqueda(null)
+                          setResultadosBusqueda([])
                         }}
                         onKeyDown={handleCodigoKeyDown}
                         className="bg-background font-mono"
@@ -343,12 +375,32 @@ export default function MovimientosManualesPage() {
                     </div>
                   </div>
 
+                  {/* Varias coincidencias (busqueda por nombre) */}
+                  {resultadosBusqueda.length > 0 && (
+                    <div className="rounded-lg border border-amber-200 bg-background divide-y max-h-56 overflow-y-auto">
+                      {resultadosBusqueda.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => seleccionarProducto(p)}
+                          className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left hover:bg-amber-50 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{p.nombre}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{p.codigo_barras || "sin código"}</p>
+                          </div>
+                          <span className="text-xs text-primary shrink-0">Seleccionar</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Error de búsqueda */}
                   {errorBusqueda && (
                     <Alert className="border-red-200 bg-red-50 py-3">
                       <AlertTriangle className="h-4 w-4 text-red-600" />
                       <AlertDescription className="text-red-700 text-sm">
-                        {errorBusqueda} — verifique el código e intente nuevamente.
+                        {errorBusqueda} — verifique el código o nombre e intente nuevamente.
                       </AlertDescription>
                     </Alert>
                   )}
@@ -367,6 +419,7 @@ export default function MovimientosManualesPage() {
                             setProductoEncontrado(null)
                             setCodigoBusqueda("")
                             setErrorBusqueda(null)
+                            setResultadosBusqueda([])
                           }}
                           title="Limpiar selección"
                         >

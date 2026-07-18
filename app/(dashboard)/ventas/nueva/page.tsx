@@ -151,13 +151,13 @@ function printReciboTermico(
 <meta charset="UTF-8">
 <style id="page-style">
   /* La altura se actualiza dinámicamente después de medir el contenido real */
-  @page { size: 80mm 500mm; margin: 0 !important; }
+  @page { size: 75mm 500mm; margin: 0 !important; }
 </style>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { margin: 0; padding: 0; }
   body {
-    width: 80mm;
+    width: 75mm;
     margin: 0;
     /* top mínimo (1mm) para no cortar el borde, right reducido para compensar
        el pequeño corte en el borde derecho moviendo 2px a la izquierda */
@@ -248,7 +248,8 @@ function printReciboTermico(
   const blobUrl = URL.createObjectURL(blob)
 
   const iframe = document.createElement('iframe')
-  iframe.style.cssText = 'position:fixed;left:-600px;top:0;width:302px;height:1px;border:0;visibility:hidden;pointer-events:none;z-index:-9999;'
+  // 75mm a 96dpi ≈ 283px (antes 302px = 80mm)
+  iframe.style.cssText = 'position:fixed;left:-600px;top:0;width:283px;height:1px;border:0;visibility:hidden;pointer-events:none;z-index:-9999;'
   document.body.appendChild(iframe)
 
   iframe.onload = () => {
@@ -260,7 +261,7 @@ function printReciboTermico(
       const heightMm = Math.ceil(scrollH * 25.4 / 96) + 6
       // Actualizar el @page con la altura exacta medida
       const pageStyle = iDoc?.getElementById('page-style')
-      if (pageStyle) pageStyle.textContent = `@page { size: 80mm ${heightMm}mm; margin: 0 !important; }`
+      if (pageStyle) pageStyle.textContent = `@page { size: 75mm ${heightMm}mm; margin: 0 !important; }`
 
       setTimeout(() => {
         iframe.contentWindow?.focus()

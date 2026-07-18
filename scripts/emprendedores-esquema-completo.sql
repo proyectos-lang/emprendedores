@@ -370,13 +370,17 @@ CREATE TABLE IF NOT EXISTS emprendedores.cambios_precio_pendientes (
 -- ============================================================
 -- PASO 9: Tesoreria
 -- ============================================================
+-- Nota: la columna se llama `comision_porcentaje` (no `porcentaje_comision`)
+-- a proposito: asi la espera lib/services/cuentas.ts, que la lee/escribe
+-- via ese nombre exacto y solo la expone al resto de la app con el alias
+-- de PostgREST `porcentaje_comision:comision_porcentaje` en los SELECT.
 CREATE TABLE IF NOT EXISTS emprendedores.cuentas_config (
   id                   SERIAL PRIMARY KEY,
   razon_social_id      INTEGER NOT NULL REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
   nombre               TEXT NOT NULL,
   tipo                 TEXT NOT NULL CHECK (tipo IN ('Banco','Link_Pago','Otro')),
-  porcentaje_comision  NUMERIC(5,2) NOT NULL DEFAULT 0
-                       CHECK (porcentaje_comision >= 0 AND porcentaje_comision <= 100),
+  comision_porcentaje  NUMERIC(5,2) NOT NULL DEFAULT 0
+                       CHECK (comision_porcentaje >= 0 AND comision_porcentaje <= 100),
   activo               BOOLEAN NOT NULL DEFAULT true,
   saldo                NUMERIC(14,2) NOT NULL DEFAULT 0,
   usuario              TEXT,
@@ -557,14 +561,22 @@ CREATE TABLE IF NOT EXISTS emprendedores.transacciones_inventario (
 -- ============================================================
 -- PASO 13: Gastos y Cuentas por Pagar
 -- ============================================================
+-- Nota: `usuario` es obligatorio aqui (y en `gastos`) porque
+-- lib/services/gastos.ts inyecta `...stamp` (razon_social_id + usuario) en
+-- cada insert, siguiendo el patron de auditoria del resto de la app.
 CREATE TABLE IF NOT EXISTS emprendedores.conceptos_gastos (
   id              SERIAL PRIMARY KEY,
   nombre          VARCHAR(100) NOT NULL,
   categoria_macro VARCHAR(50) NOT NULL CHECK (categoria_macro IN ('Servicios','Publicidad','Nomina','Arriendo','Mantenimiento','Impuestos','Suministros','Otros')),
   razon_social_id INTEGER REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
+  usuario         TEXT,
   created_at      TIMESTAMPTZ DEFAULT now()
 );
 
+-- Nota: `proveedor_id` es la FK real que usa el codigo (join
+-- `proveedores:proveedor_id` en getGastos/getCuentasPorPagar).
+-- `proveedor_nombre`/`numero_factura` quedan como columnas legadas sin uso
+-- del codigo actual (no se escriben ni se leen), se dejan por compatibilidad.
 CREATE TABLE IF NOT EXISTS emprendedores.gastos (
   id                SERIAL PRIMARY KEY,
   concepto_id       INTEGER NOT NULL REFERENCES emprendedores.conceptos_gastos(id) ON DELETE RESTRICT,
@@ -573,12 +585,14 @@ CREATE TABLE IF NOT EXISTS emprendedores.gastos (
   metodo_pago       VARCHAR(20) NOT NULL CHECK (metodo_pago IN ('Efectivo','Transferencia','Tarjeta')),
   descripcion       TEXT,
   comprobante_url   TEXT,
+  proveedor_id      INTEGER REFERENCES emprendedores.proveedores(id) ON DELETE SET NULL,
   proveedor_nombre  TEXT,
   numero_factura    TEXT,
   fecha_vencimiento DATE,
   monto_pagado      NUMERIC(14,2) NOT NULL DEFAULT 0,
   estado_pago       TEXT NOT NULL DEFAULT 'Pendiente' CHECK (estado_pago IN ('Pendiente','Parcial','Pagado')),
   razon_social_id   INTEGER REFERENCES emprendedores.razon_social(id) ON DELETE CASCADE,
+  usuario           TEXT,
   created_at        TIMESTAMPTZ DEFAULT now()
 );
 
