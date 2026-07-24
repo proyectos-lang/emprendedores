@@ -188,6 +188,7 @@ export default function VentasEmprendedorPage() {
       Subtotal: subtotalFinal(v),
       Envio: v.es_envio ? "Si" : "No",
       "Flete descontado": v.es_envio ? v.valor_flete : 0,
+      Comentario: v.comentario ?? "",
     }))
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
@@ -428,6 +429,7 @@ export default function VentasEmprendedorPage() {
                     <TableHead className="text-right text-stone-500">Precio unit.</TableHead>
                     <TableHead className="text-right text-stone-500">Descuento</TableHead>
                     <TableHead className="text-right text-stone-500">Subtotal</TableHead>
+                    <TableHead className="text-stone-500">Comentario</TableHead>
                     <TableHead className="text-stone-500">Estado</TableHead>
                     <TableHead className="text-stone-500"></TableHead>
                   </TableRow>
@@ -435,7 +437,7 @@ export default function VentasEmprendedorPage() {
                 <TableBody>
                   {ventasPagina.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={11} className="text-center text-stone-400 py-10">
+                      <TableCell colSpan={12} className="text-center text-stone-400 py-10">
                         {busqueda ? "Sin resultados para la búsqueda" : "Sin ventas en el período seleccionado"}
                       </TableCell>
                     </TableRow>
@@ -474,6 +476,15 @@ export default function VentasEmprendedorPage() {
                           })()}
                         </TableCell>
                         <TableCell className="text-right font-semibold text-stone-800 whitespace-nowrap">{fmoney(subtotalFinal(v))}</TableCell>
+                        <TableCell className="max-w-[14rem]">
+                          {v.comentario ? (
+                            <span className="text-xs text-stone-600 line-clamp-2 break-words" title={v.comentario}>
+                              {v.comentario}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-stone-300">—</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {v.estado_pago === "Pagado" ? (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-700">Pagado</span>

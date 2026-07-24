@@ -1214,7 +1214,14 @@ export default function HistorialVentasPage() {
                   <TableBody>
                     {detalles.map(d => (
                       <TableRow key={d.id}>
-                        <TableCell>{d.producto_nombre}</TableCell>
+                        <TableCell>
+                          {d.producto_nombre}
+                          {d.comentario && (
+                            <p className="text-xs text-muted-foreground italic mt-0.5 break-words">
+                              {d.comentario}
+                            </p>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{d.cantidad}</TableCell>
                         <TableCell className="text-right">L {(d.precio_unitario ?? 0).toFixed(2)}</TableCell>
                         <TableCell className="text-right">L {((d.cantidad ?? 0) * (d.precio_unitario ?? 0)).toFixed(2)}</TableCell>

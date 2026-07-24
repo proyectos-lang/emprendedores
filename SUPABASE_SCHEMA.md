@@ -416,6 +416,7 @@ Snapshot de montos al generar/recalcular; congelado al marcar `pagado`.
 | `costo_promedio_momento` | `NUMERIC(14,4)` | NOT NULL DEFAULT 0 | Snapshot del costo al vender |
 | `utilidad_linea` | `NUMERIC(14,4)` | NOT NULL DEFAULT 0 | `(precio_neto - costo) × cantidad` |
 | `descuentodetalle` | `NUMERIC(5,2)` | DEFAULT 0 | % descuento por línea — migración 020 |
+| `comentario` | `TEXT` | NULL | Nota libre del vendedor sobre esa línea; visible para el emprendedor — migración 025 |
 | `razon_social_id` | `INTEGER` | FK → `razon_social(id)` | Multi-tenant |
 | `usuario` | `TEXT` | NULL | Auditoría |
 
@@ -1078,6 +1079,7 @@ CREATE TABLE IF NOT EXISTS emprendedores.ventas_detalle (
   costo_promedio_momento   NUMERIC(14,4) NOT NULL DEFAULT 0,
   utilidad_linea           NUMERIC(14,4) NOT NULL DEFAULT 0,
   descuentodetalle         NUMERIC(5,2) DEFAULT 0,
+  comentario               TEXT,
   razon_social_id          INTEGER REFERENCES emprendedores.razon_social(id),
   usuario                  TEXT
 );

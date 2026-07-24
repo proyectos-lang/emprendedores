@@ -13,6 +13,8 @@ export interface LineaCarrito {
   utilidad_linea: number
   stock_disponible: number
   descuento: number  // % descuento por línea (0-100)
+  /** Nota libre del vendedor sobre esta línea; visible para el emprendedor. */
+  comentario?: string
 }
 
 export interface CarritoTemporal {

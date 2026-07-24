@@ -475,6 +475,7 @@ CREATE TABLE IF NOT EXISTS emprendedores.ventas_detalle (
   costo_promedio_momento   NUMERIC(14,4) NOT NULL DEFAULT 0,
   utilidad_linea           NUMERIC(14,4) NOT NULL DEFAULT 0,
   descuentodetalle         NUMERIC(5,2) DEFAULT 0,
+  comentario               TEXT,
   razon_social_id          INTEGER REFERENCES emprendedores.razon_social(id),
   usuario                  TEXT
 );

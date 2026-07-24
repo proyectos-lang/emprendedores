@@ -60,6 +60,8 @@ export interface VentaDetalle {
   costo_promedio_momento: number
   utilidad_linea: number
   descuentodetalle?: number  // % descuento por línea (0-100), default 0
+  /** Nota libre del vendedor sobre esta línea; visible para el emprendedor (migracion 025). */
+  comentario?: string | null
 }
 
 export interface PagoVenta {
@@ -745,9 +747,18 @@ export async function crearVenta(
       }
     })
 
-    const { error: detallesError } = await supabase
+    let { error: detallesError } = await supabase
       .from('ventas_detalle')
       .insert(detallesConVenta)
+
+    // Fallback: si `comentario` aun no existe (migracion 025 sin aplicar),
+    // reintentamos sin ese campo para no bloquear la venta.
+    if (detallesError && /comentario/i.test(detallesError.message || '')) {
+      console.warn('[crearVenta] Columna comentario no existe. Reintentando sin ella.')
+      const sinComentario = detallesConVenta.map(({ comentario: _c, ...rest }) => rest)
+      const retry = await supabase.from('ventas_detalle').insert(sinComentario)
+      detallesError = retry.error
+    }
 
     if (detallesError) {
       await supabase.from('ventas_encabezado').delete().eq('id', ventaData.id)
@@ -2164,6 +2175,8 @@ export interface VentaEmprendedor {
   es_envio: boolean
   /** Flete del envio; se descuenta en la liquidacion semanal (migracion 022) */
   valor_flete: number
+  /** Nota del vendedor sobre esta linea de venta (migracion 025) */
+  comentario: string | null
 }
 
 function resolverMetodoPago(metodos: string[]): string {
@@ -2188,13 +2201,13 @@ export async function getVentasByEmprendimiento(
   if (!supabase) return []
 
   try {
-    const buildQuery = (conCamposEnvio: boolean) => supabase
+    const buildQuery = (conCamposEnvio: boolean, conComentario: boolean) => supabase
       .from('ventas_detalle')
       .select(`
         venta_id,
         cantidad,
         precio_unitario,
-        descuentodetalle,
+        descuentodetalle,${conComentario ? '\n        comentario,' : ''}
         productos!inner(id, nombre, codigo_barras, emprendimiento_id),
         ventas_encabezado!inner(fecha_venta, numero_factura, descuento, metodo_pago, estado_pago${conCamposEnvio ? ', es_credito, es_envio, valor_flete' : ''})
       `)
@@ -2203,11 +2216,22 @@ export async function getVentasByEmprendimiento(
       .lte('ventas_encabezado.fecha_venta', hasta)
       .order('venta_id', { ascending: false })
 
-    let { data, error } = await buildQuery(true)
+    let conCamposEnvio = true
+    let conComentario = true
+    let { data, error } = await buildQuery(conCamposEnvio, conComentario)
+
+    // Fallback si la migracion 025 (comentario) no esta aplicada
+    if (error && /comentario/i.test(error.message || '')) {
+      conComentario = false
+      const retry = await buildQuery(conCamposEnvio, conComentario)
+      data = retry.data
+      error = retry.error
+    }
 
     // Fallback si la migracion 022 no esta aplicada
     if (error && /es_credito|es_envio|valor_flete/i.test(error.message || '')) {
-      const retry = await buildQuery(false)
+      conCamposEnvio = false
+      const retry = await buildQuery(conCamposEnvio, conComentario)
       data = retry.data
       error = retry.error
     }
@@ -2250,6 +2274,7 @@ export async function getVentasByEmprendimiento(
         es_credito: encabezado?.es_credito === true,
         es_envio: encabezado?.es_envio === true,
         valor_flete: Number(encabezado?.valor_flete ?? 0),
+        comentario: row.comentario ?? null,
       }
     }).sort((a, b) => b.fecha_venta.localeCompare(a.fecha_venta))
   } catch (err) {

@@ -559,6 +559,10 @@ export default function NuevaVentaPage() {
     }))
   }
 
+  function updateComentario(index: number, texto: string) {
+    setLineas(lineas.map((l, i) => (i === index ? { ...l, comentario: texto } : l)))
+  }
+
   function removeLinea(index: number) {
     setLineas(lineas.filter((_, i) => i !== index))
   }
@@ -885,7 +889,8 @@ export default function NuevaVentaPage() {
         precio_unitario: l.precio_unitario,
         descuentodetalle: l.descuento ?? 0,
         costo_promedio_momento: l.costo_promedio,
-        utilidad_linea: l.utilidad_linea
+        utilidad_linea: l.utilidad_linea,
+        comentario: l.comentario?.trim() || null,
       }))
 
       // Venta a credito: sin pagos, sin movimientos de dinero (el service
@@ -941,7 +946,8 @@ export default function NuevaVentaPage() {
           precio_unitario: esCredito ? 0 : l.precio_unitario,
           descuentodetalle: esCredito ? 0 : (l.descuento ?? 0),
           costo_promedio_momento: l.costo_promedio,
-          utilidad_linea: esCredito ? 0 : l.utilidad_linea
+          utilidad_linea: esCredito ? 0 : l.utilidad_linea,
+          comentario: l.comentario?.trim() || null,
         }))
       }
       
@@ -1618,6 +1624,15 @@ export default function NuevaVentaPage() {
                         <p className="font-bold text-sm">L {(linea.subtotal ?? 0).toFixed(2)}</p>
                       </div>
                     </div>
+
+                    {/* Comentario de la linea (visible para el emprendedor) */}
+                    <Input
+                      value={linea.comentario ?? ""}
+                      onChange={(e) => updateComentario(index, e.target.value)}
+                      placeholder="Comentario (opcional)..."
+                      maxLength={300}
+                      className="mt-2 h-7 text-xs"
+                    />
                   </div>
                   )
                 })}
