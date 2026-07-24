@@ -218,7 +218,7 @@ Sub-ubicaciones dentro de un almacén (estantería, pasillo, etc.).
 | Columna | Tipo | Restricciones | Descripción |
 |---|---|---|---|
 | `id` | `SERIAL` | PK | |
-| `nombre` | `TEXT` | NOT NULL | |
+| `nombre` | `TEXT` | NOT NULL | Editable por el emprendedor desde su portal |
 | `codigo_barras` | `TEXT` | NULL | Recomendado UNIQUE por tenant |
 | `precio_venta_sugerido` | `NUMERIC(12,2)` | NOT NULL DEFAULT 0 | |
 | `costo_promedio` | `NUMERIC(12,2)` | DEFAULT 0 | Se recalcula al aprobar ingresos |
