@@ -199,6 +199,60 @@ export async function recalcularLiquidacion(
   return { error: null }
 }
 
+/**
+ * Recalcula TODAS las liquidaciones pendientes de una semana en un solo
+ * paso. Computa los montos de la semana una sola vez y actualiza cada fila
+ * pendiente. Las pagadas no se tocan (historico congelado).
+ */
+export async function recalcularLiquidacionesSemana(
+  razonSocialId: number,
+  fechaInicio: string,
+  usuario: string
+): Promise<{ actualizadas: number; error: string | null }> {
+  const supabase = createAdminClient()
+  if (!supabase) return { actualizadas: 0, error: "Cliente admin no disponible" }
+
+  const { data: pendientes, error: getErr } = await supabase
+    .from("liquidaciones_semanales")
+    .select("id, emprendimiento_id")
+    .eq("razon_social_id", razonSocialId)
+    .eq("fecha_inicio", fechaInicio)
+    .eq("estado", "pendiente")
+
+  if (getErr) return { actualizadas: 0, error: getErr.message }
+  if (!pendientes?.length) return { actualizadas: 0, error: null }
+
+  const montos = await calcularLiquidacionesSemana(razonSocialId, fechaInicio)
+  const ahora = getHondurasNowISO()
+
+  let actualizadas = 0
+  let primerError: string | null = null
+
+  for (const liq of pendientes) {
+    const m = montos.get(liq.emprendimiento_id) ?? { monto_ventas: 0, monto_fletes: 0 }
+    const { error } = await supabase
+      .from("liquidaciones_semanales")
+      .update({
+        monto_ventas: m.monto_ventas,
+        monto_fletes: m.monto_fletes,
+        monto_neto: +(m.monto_ventas - m.monto_fletes).toFixed(2),
+        usuario,
+        updated_at: ahora,
+      })
+      .eq("id", liq.id)
+      .eq("estado", "pendiente")
+
+    if (error) {
+      if (!primerError) primerError = error.message
+      console.error("[liquidaciones] Error recalculando id", liq.id, error)
+    } else {
+      actualizadas++
+    }
+  }
+
+  return { actualizadas, error: primerError }
+}
+
 /** Liquidaciones de una semana (vista admin), con nombre de emprendimiento. */
 export async function getLiquidacionesSemana(
   razonSocialId: number,

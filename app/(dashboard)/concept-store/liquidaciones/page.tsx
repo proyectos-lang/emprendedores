@@ -7,6 +7,7 @@ import {
   getLiquidacionesSemana,
   generarLiquidacionesSemana,
   recalcularLiquidacion,
+  recalcularLiquidacionesSemana,
   marcarLiquidacionPagada,
   revertirLiquidacion,
   calcularLiquidacionesSemana,
@@ -91,6 +92,7 @@ export default function LiquidacionesPage() {
   const [loading, setLoading] = React.useState(true)
   const [generando, setGenerando] = React.useState(false)
   const [recalculandoId, setRecalculandoId] = React.useState<number | null>(null)
+  const [recalculandoTodo, setRecalculandoTodo] = React.useState(false)
 
   const rango = getRangoSemana(inicio)
   const semanaEnCurso = !semanaTerminada(rango.fin)
@@ -152,6 +154,30 @@ export default function LiquidacionesPage() {
       }
     } finally {
       setRecalculandoId(null)
+    }
+  }
+
+  const handleRecalcularTodo = async () => {
+    if (razonSocialId == null) return
+    setRecalculandoTodo(true)
+    try {
+      const { actualizadas, error } = await recalcularLiquidacionesSemana(
+        razonSocialId,
+        inicio,
+        user?.nombre ?? "admin"
+      )
+      if (error) {
+        toast({ title: "Error", description: error, variant: "destructive" })
+      } else {
+        toast({
+          title: actualizadas > 0
+            ? `${actualizadas} liquidacion${actualizadas !== 1 ? "es" : ""} recalculada${actualizadas !== 1 ? "s" : ""}`
+            : "Sin liquidaciones pendientes que recalcular",
+        })
+        await cargar()
+      }
+    } finally {
+      setRecalculandoTodo(false)
     }
   }
 
@@ -292,6 +318,15 @@ export default function LiquidacionesPage() {
             </Button>
             <Button variant="outline" size="icon" onClick={cargar} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleRecalcularTodo}
+              disabled={recalculandoTodo || loading || razonSocialId == null || cantPendientes === 0}
+              title="Recalcular todas las liquidaciones pendientes de esta semana"
+            >
+              {recalculandoTodo ? <Spinner className="h-4 w-4 mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Recalcular todo
             </Button>
             <Button onClick={handleGenerar} disabled={generando || loading || razonSocialId == null}>
               {generando ? <Spinner className="h-4 w-4 mr-2" /> : null}
