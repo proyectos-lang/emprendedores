@@ -9,8 +9,8 @@ export interface LiquidacionSemanal {
   id?: number
   emprendimiento_id: number
   razon_social_id?: number
-  fecha_inicio: string // lunes, YYYY-MM-DD
-  fecha_fin: string    // domingo, YYYY-MM-DD
+  fecha_inicio: string // viernes (o inicio manual), YYYY-MM-DD
+  fecha_fin: string    // jueves, YYYY-MM-DD
   monto_ventas: number
   monto_fletes: number
   monto_neto: number

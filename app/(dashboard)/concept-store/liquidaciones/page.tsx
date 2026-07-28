@@ -18,7 +18,8 @@ import { getVentasByEmprendimiento, type VentaEmprendedor } from "@/lib/services
 import {
   getRangoSemana,
   addSemanas,
-  getSemanaAnteriorLunes,
+  getViernesSemanaActual,
+  formatRango,
   semanaTerminada,
 } from "@/lib/utils/semanas"
 import { Button } from "@/components/ui/button"
@@ -80,14 +81,18 @@ export default function LiquidacionesPage() {
   const { razonSocialId, ready } = useTenant()
   const { toast } = useToast()
 
-  const [lunes, setLunes] = React.useState(() => getSemanaAnteriorLunes())
+  // `inicio` es la fecha de inicio de la semana seleccionada (YYYY-MM-DD).
+  // Por defecto el viernes de la semana Vie-Jue actual, pero es un input
+  // libre: el admin puede escribir cualquier fecha de inicio manual (util
+  // para la primera liquidacion parcial que arranca a mitad de semana).
+  const [inicio, setInicio] = React.useState(() => getViernesSemanaActual())
   const [liquidaciones, setLiquidaciones] = React.useState<LiquidacionSemanal[]>([])
   const [montosVivo, setMontosVivo] = React.useState<Map<number, { monto_ventas: number; monto_fletes: number }>>(new Map())
   const [loading, setLoading] = React.useState(true)
   const [generando, setGenerando] = React.useState(false)
   const [recalculandoId, setRecalculandoId] = React.useState<number | null>(null)
 
-  const rango = getRangoSemana(lunes)
+  const rango = getRangoSemana(inicio)
   const semanaEnCurso = !semanaTerminada(rango.fin)
 
   const cargar = React.useCallback(async () => {
@@ -98,15 +103,15 @@ export default function LiquidacionesPage() {
     setLoading(true)
     try {
       const [rows, montos] = await Promise.all([
-        getLiquidacionesSemana(razonSocialId, lunes),
-        calcularLiquidacionesSemana(razonSocialId, lunes),
+        getLiquidacionesSemana(razonSocialId, inicio),
+        calcularLiquidacionesSemana(razonSocialId, inicio),
       ])
       setLiquidaciones(rows)
       setMontosVivo(montos)
     } finally {
       setLoading(false)
     }
-  }, [razonSocialId, lunes])
+  }, [razonSocialId, inicio])
 
   React.useEffect(() => {
     if (!ready) return
@@ -117,7 +122,7 @@ export default function LiquidacionesPage() {
     if (razonSocialId == null) return
     setGenerando(true)
     try {
-      const { insertados, error } = await generarLiquidacionesSemana(razonSocialId, lunes, user?.nombre ?? "admin")
+      const { insertados, error } = await generarLiquidacionesSemana(razonSocialId, inicio, user?.nombre ?? "admin")
       if (error) {
         toast({ title: "Error", description: error, variant: "destructive" })
       } else {
@@ -267,24 +272,35 @@ export default function LiquidacionesPage() {
             Liquidaciones Semanales
           </h1>
           <p className="text-sm text-stone-500 mt-1">
-            Pago semanal (lunes-domingo) a cada emprendedor por sus ventas, menos fletes de envio
+            Pago semanal (viernes-jueves) a cada emprendedor por sus ventas, menos fletes de envio
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => setLunes((l) => addSemanas(l, -1))}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <div className="text-sm font-medium text-stone-700 w-56 text-center">{rango.label}</div>
-          <Button variant="outline" size="icon" onClick={() => setLunes((l) => addSemanas(l, 1))}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="icon" onClick={cargar} disabled={loading}>
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-          <Button onClick={handleGenerar} disabled={generando || loading || razonSocialId == null}>
-            {generando ? <Spinner className="h-4 w-4 mr-2" /> : null}
-            Generar semana
-          </Button>
+        <div className="flex flex-col items-stretch sm:items-end gap-1.5">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" title="Semana anterior" onClick={() => setInicio((d) => addSemanas(d, -1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Input
+              type="date"
+              value={inicio}
+              onChange={(e) => { if (e.target.value) setInicio(e.target.value) }}
+              className="w-40"
+              title="Fecha de inicio de la semana"
+            />
+            <Button variant="outline" size="icon" title="Semana siguiente" onClick={() => setInicio((d) => addSemanas(d, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="icon" onClick={cargar} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+            <Button onClick={handleGenerar} disabled={generando || loading || razonSocialId == null}>
+              {generando ? <Spinner className="h-4 w-4 mr-2" /> : null}
+              Generar semana
+            </Button>
+          </div>
+          <p className="text-xs text-stone-500 text-center sm:text-right">
+            {rango.label}
+          </p>
         </div>
       </div>
 

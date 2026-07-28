@@ -9,7 +9,7 @@ import {
   type FleteSemana,
 } from "@/lib/services/liquidaciones"
 import { getVentasByEmprendimiento, type VentaEmprendedor } from "@/lib/services/ventas"
-import { getRangoSemana } from "@/lib/utils/semanas"
+import { formatRango } from "@/lib/utils/semanas"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -121,7 +121,7 @@ export default function LiquidacionesEmprendedorPage() {
               {liquidaciones.map((liq) => (
                 <TableRow key={liq.id} className="hover:bg-stone-50/60 cursor-pointer" onClick={() => abrirDetalle(liq)}>
                   <TableCell className="text-sm text-stone-700">
-                    {getRangoSemana(liq.fecha_inicio).label}
+                    {formatRango(liq.fecha_inicio, liq.fecha_fin)}
                   </TableCell>
                   <TableCell className="text-right text-stone-600">{fmoney(liq.monto_ventas)}</TableCell>
                   <TableCell className="text-right text-red-600">
@@ -168,7 +168,7 @@ export default function LiquidacionesEmprendedorPage() {
       <Dialog open={!!detalleLiq} onOpenChange={(o) => { if (!o) setDetalleLiq(null) }}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{detalleLiq && getRangoSemana(detalleLiq.fecha_inicio).label}</DialogTitle>
+            <DialogTitle>{detalleLiq && formatRango(detalleLiq.fecha_inicio, detalleLiq.fecha_fin)}</DialogTitle>
           </DialogHeader>
           {loadingDetalle ? (
             <div className="space-y-2 py-4">
