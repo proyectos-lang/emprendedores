@@ -346,6 +346,106 @@ export async function revertirLiquidacion(
   return { error: null }
 }
 
+export interface SemanaGenerada {
+  fecha_inicio: string
+  fecha_fin: string
+  total_liquidaciones: number
+  pendientes: number
+  pagadas: number
+  total_neto: number
+}
+
+/**
+ * Lista las semanas de liquidacion generadas (agrupadas por fecha_inicio),
+ * con su rango de fechas y agregados. Ordenadas de la mas reciente a la
+ * mas antigua. Sirve para el historial de liquidaciones del admin.
+ */
+export async function getSemanasGeneradas(
+  razonSocialId: number
+): Promise<SemanaGenerada[]> {
+  const supabase = createClient()
+  if (!supabase) return []
+
+  const { data, error } = await supabase
+    .from("liquidaciones_semanales")
+    .select("fecha_inicio, fecha_fin, monto_neto, estado")
+    .eq("razon_social_id", razonSocialId)
+    .order("fecha_inicio", { ascending: false })
+
+  if (error) {
+    console.error("[liquidaciones] Error getSemanasGeneradas:", error)
+    return []
+  }
+
+  // Agrupamos por fecha_inicio (una fila por semana). El orden desc de la
+  // query se preserva en el orden de insercion del Map.
+  const map = new Map<string, SemanaGenerada>()
+  for (const r of (data ?? []) as any[]) {
+    const key = r.fecha_inicio
+    const cur = map.get(key) ?? {
+      fecha_inicio: r.fecha_inicio,
+      fecha_fin: r.fecha_fin,
+      total_liquidaciones: 0,
+      pendientes: 0,
+      pagadas: 0,
+      total_neto: 0,
+    }
+    cur.total_liquidaciones++
+    if (r.estado === "pagado") cur.pagadas++
+    else cur.pendientes++
+    cur.total_neto = +(cur.total_neto + Number(r.monto_neto ?? 0)).toFixed(2)
+    map.set(key, cur)
+  }
+
+  return [...map.values()]
+}
+
+/**
+ * Elimina TODAS las liquidaciones de una semana (todas las filas con ese
+ * fecha_inicio). Al borrarlas de la tabla, desaparecen tambien del portal
+ * de cada emprendedor. Filtra por razon_social_id (multi-tenant).
+ */
+export async function eliminarLiquidacionesSemana(
+  razonSocialId: number,
+  fechaInicio: string
+): Promise<{ eliminadas: number; error: string | null }> {
+  const supabase = createAdminClient()
+  if (!supabase) return { eliminadas: 0, error: "Cliente admin no disponible" }
+
+  const { data, error } = await supabase
+    .from("liquidaciones_semanales")
+    .delete()
+    .eq("razon_social_id", razonSocialId)
+    .eq("fecha_inicio", fechaInicio)
+    .select("id")
+
+  if (error) return { eliminadas: 0, error: error.message }
+  return { eliminadas: data?.length ?? 0, error: null }
+}
+
+/**
+ * Elimina una liquidacion (pendiente o pagada). Al borrar la fila de
+ * `liquidaciones_semanales`, desaparece automaticamente del portal del
+ * emprendedor, que lee de la misma tabla (no hay copia por emprendedor).
+ * Filtra por razon_social_id como defensa multi-tenant.
+ */
+export async function eliminarLiquidacion(
+  id: number,
+  razonSocialId: number
+): Promise<{ error: string | null }> {
+  const supabase = createAdminClient()
+  if (!supabase) return { error: "Cliente admin no disponible" }
+
+  const { error } = await supabase
+    .from("liquidaciones_semanales")
+    .delete()
+    .eq("id", id)
+    .eq("razon_social_id", razonSocialId)
+
+  if (error) return { error: error.message }
+  return { error: null }
+}
+
 /** Historico de liquidaciones de un emprendimiento (portal del emprendedor). */
 export async function getLiquidacionesByEmprendimiento(
   emprendimientoId: number,

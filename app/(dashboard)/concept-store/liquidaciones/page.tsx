@@ -10,10 +10,14 @@ import {
   recalcularLiquidacionesSemana,
   marcarLiquidacionPagada,
   revertirLiquidacion,
+  eliminarLiquidacion,
+  getSemanasGeneradas,
+  eliminarLiquidacionesSemana,
   calcularLiquidacionesSemana,
   getFletesSemanaEmprendimiento,
   type LiquidacionSemanal,
   type FleteSemana,
+  type SemanaGenerada,
 } from "@/lib/services/liquidaciones"
 import { getVentasByEmprendimiento, type VentaEmprendedor } from "@/lib/services/ventas"
 import {
@@ -37,6 +41,16 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -44,6 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -57,6 +72,7 @@ import {
   AlertTriangle,
   Truck,
   ImageIcon,
+  Trash2,
 } from "lucide-react"
 
 function formatLps(n: number) {
@@ -94,6 +110,11 @@ export default function LiquidacionesPage() {
   const [recalculandoId, setRecalculandoId] = React.useState<number | null>(null)
   const [recalculandoTodo, setRecalculandoTodo] = React.useState(false)
 
+  // Tab activo + historial de semanas generadas
+  const [tab, setTab] = React.useState<"semana" | "historial">("semana")
+  const [historial, setHistorial] = React.useState<SemanaGenerada[]>([])
+  const [loadingHistorial, setLoadingHistorial] = React.useState(false)
+
   const rango = getRangoSemana(inicio)
   const semanaEnCurso = !semanaTerminada(rango.fin)
 
@@ -119,6 +140,21 @@ export default function LiquidacionesPage() {
     if (!ready) return
     cargar()
   }, [ready, cargar])
+
+  const cargarHistorial = React.useCallback(async () => {
+    if (razonSocialId == null) return
+    setLoadingHistorial(true)
+    try {
+      setHistorial(await getSemanasGeneradas(razonSocialId))
+    } finally {
+      setLoadingHistorial(false)
+    }
+  }, [razonSocialId])
+
+  React.useEffect(() => {
+    if (!ready || razonSocialId == null) return
+    if (tab === "historial") cargarHistorial()
+  }, [ready, razonSocialId, tab, cargarHistorial])
 
   const handleGenerar = async () => {
     if (razonSocialId == null) return
@@ -189,6 +225,51 @@ export default function LiquidacionesPage() {
     } else {
       toast({ title: "Liquidacion revertida a pendiente" })
       await cargar()
+    }
+  }
+
+  // Eliminar liquidacion (con confirmacion). Borra la fila de la tabla, por
+  // lo que tambien desaparece del portal del emprendedor.
+  const [liqEliminar, setLiqEliminar] = React.useState<LiquidacionSemanal | null>(null)
+  const [eliminando, setEliminando] = React.useState(false)
+
+  const handleEliminar = async () => {
+    if (!liqEliminar?.id || razonSocialId == null) return
+    setEliminando(true)
+    try {
+      const { error } = await eliminarLiquidacion(liqEliminar.id, razonSocialId)
+      if (error) {
+        toast({ title: "Error al eliminar", description: error, variant: "destructive" })
+      } else {
+        toast({ title: "Liquidacion eliminada" })
+        setLiqEliminar(null)
+        await cargar()
+      }
+    } finally {
+      setEliminando(false)
+    }
+  }
+
+  // Eliminar toda una semana desde el historial.
+  const [semanaEliminar, setSemanaEliminar] = React.useState<SemanaGenerada | null>(null)
+  const [eliminandoSemana, setEliminandoSemana] = React.useState(false)
+
+  const handleEliminarSemana = async () => {
+    if (!semanaEliminar || razonSocialId == null) return
+    setEliminandoSemana(true)
+    try {
+      const { eliminadas, error } = await eliminarLiquidacionesSemana(razonSocialId, semanaEliminar.fecha_inicio)
+      if (error) {
+        toast({ title: "Error al eliminar", description: error, variant: "destructive" })
+      } else {
+        toast({ title: `${eliminadas} liquidacion${eliminadas !== 1 ? "es" : ""} eliminada${eliminadas !== 1 ? "s" : ""}` })
+        setSemanaEliminar(null)
+        await cargarHistorial()
+        // Si borramos la semana que se ve en la pestaña "Por semana", refrescarla.
+        if (semanaEliminar.fecha_inicio === inicio) await cargar()
+      }
+    } finally {
+      setEliminandoSemana(false)
     }
   }
 
@@ -291,16 +372,23 @@ export default function LiquidacionesPage() {
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-stone-800 flex items-center gap-2">
-            <Banknote className="h-6 w-6 text-blue-600" />
-            Liquidaciones Semanales
-          </h1>
-          <p className="text-sm text-stone-500 mt-1">
-            Pago semanal (viernes-jueves) a cada emprendedor por sus ventas, menos fletes de envio
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-stone-800 flex items-center gap-2">
+          <Banknote className="h-6 w-6 text-blue-600" />
+          Liquidaciones Semanales
+        </h1>
+        <p className="text-sm text-stone-500 mt-1">
+          Pago semanal (viernes-jueves) a cada emprendedor por sus ventas, menos fletes de envio
+        </p>
+      </div>
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "semana" | "historial")}>
+        <TabsList>
+          <TabsTrigger value="semana">Por semana</TabsTrigger>
+          <TabsTrigger value="historial">Historial</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="semana" className="space-y-6 mt-4">
         <div className="flex flex-col items-stretch sm:items-end gap-1.5">
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" title="Semana anterior" onClick={() => setInicio((d) => addSemanas(d, -1))}>
@@ -337,7 +425,6 @@ export default function LiquidacionesPage() {
             {rango.label}
           </p>
         </div>
-      </div>
 
       {semanaEnCurso && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -466,6 +553,15 @@ export default function LiquidacionesPage() {
                           </Button>
                         </>
                       )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-stone-400 hover:text-red-600"
+                        onClick={() => setLiqEliminar(liq)}
+                        title="Eliminar liquidacion"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -474,6 +570,150 @@ export default function LiquidacionesPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        {/* ── Historial de semanas generadas ── */}
+        <TabsContent value="historial" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              {loadingHistorial ? (
+                <div className="flex items-center justify-center py-16">
+                  <Spinner className="h-6 w-6" />
+                </div>
+              ) : historial.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-stone-400 gap-2">
+                  <AlertCircle className="h-8 w-8" />
+                  <p className="text-sm font-medium">Aun no se ha generado ninguna liquidacion.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Semana (inicio – fin)</TableHead>
+                      <TableHead className="text-center">Liquidaciones</TableHead>
+                      <TableHead className="text-center">Estado</TableHead>
+                      <TableHead className="text-right">Total neto</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {historial.map((s) => (
+                      <TableRow key={s.fecha_inicio}>
+                        <TableCell className="font-medium">
+                          {formatRango(s.fecha_inicio, s.fecha_fin)}
+                          <span className="block text-xs font-mono text-stone-400">
+                            {s.fecha_inicio} → {s.fecha_fin}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center text-stone-600">{s.total_liquidaciones}</TableCell>
+                        <TableCell className="text-center">
+                          <span className="inline-flex gap-1 justify-center flex-wrap">
+                            {s.pagadas > 0 && (
+                              <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-green-200 text-[10px]">
+                                {s.pagadas} pagada{s.pagadas !== 1 ? "s" : ""}
+                              </Badge>
+                            )}
+                            {s.pendientes > 0 && (
+                              <Badge variant="outline" className="text-orange-600 border-orange-300 text-[10px]">
+                                {s.pendientes} pendiente{s.pendientes !== 1 ? "s" : ""}
+                              </Badge>
+                            )}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">{formatLps(s.total_neto)}</TableCell>
+                        <TableCell className="text-right whitespace-nowrap space-x-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => { setInicio(s.fecha_inicio); setTab("semana") }}
+                          >
+                            Ver
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-stone-400 hover:text-red-600"
+                            onClick={() => setSemanaEliminar(s)}
+                            title="Eliminar todas las liquidaciones de esta semana"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* AlertDialog: Confirmar eliminacion de una semana completa */}
+      <AlertDialog open={!!semanaEliminar} onOpenChange={(o) => { if (!o) setSemanaEliminar(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar liquidaciones de la semana</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminaran las{" "}
+              <span className="font-semibold text-stone-800">{semanaEliminar?.total_liquidaciones}</span>{" "}
+              liquidaciones de la semana{" "}
+              <span className="font-semibold text-stone-800">
+                {semanaEliminar && formatRango(semanaEliminar.fecha_inicio, semanaEliminar.fecha_fin)}
+              </span>. Tambien desapareceran del portal de cada emprendedor.
+              {semanaEliminar && semanaEliminar.pagadas > 0 && (
+                <span className="block mt-2 text-red-600">
+                  {semanaEliminar.pagadas} de ellas estan PAGADAS: se perderan sus registros de pago y comprobantes.
+                </span>
+              )}
+              {" "}Esta accion no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={eliminandoSemana}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleEliminarSemana() }}
+              disabled={eliminandoSemana}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {eliminandoSemana ? <Spinner className="h-4 w-4 mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Eliminar semana
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog: Confirmar eliminacion */}
+      <AlertDialog open={!!liqEliminar} onOpenChange={(o) => { if (!o) setLiqEliminar(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar liquidacion</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminara la liquidacion de{" "}
+              <span className="font-semibold text-stone-800">{liqEliminar?.emprendimiento_nombre}</span>{" "}
+              por {liqEliminar ? formatLps(liqEliminar.monto_neto) : ""}. Tambien desaparecera del portal del
+              emprendedor.
+              {liqEliminar?.estado === "pagado" && (
+                <span className="block mt-2 text-red-600">
+                  Esta liquidacion esta marcada como PAGADA: se perdera el registro del pago y su comprobante.
+                </span>
+              )}
+              {" "}Esta accion no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={eliminando}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handleEliminar() }}
+              disabled={eliminando}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {eliminando ? <Spinner className="h-4 w-4 mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Dialog: Registrar pago */}
       <Dialog open={!!liqPagar} onOpenChange={(o) => { if (!o) setLiqPagar(null) }}>
