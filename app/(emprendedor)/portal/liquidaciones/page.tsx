@@ -187,6 +187,7 @@ export default function LiquidacionesEmprendedorPage() {
                         <TableRow>
                           <TableHead>Factura</TableHead>
                           <TableHead>Producto</TableHead>
+                          <TableHead>Observaciones</TableHead>
                           <TableHead className="text-right">Cant.</TableHead>
                           <TableHead className="text-right">Subtotal</TableHead>
                         </TableRow>
@@ -201,6 +202,13 @@ export default function LiquidacionesEmprendedorPage() {
                               )}
                             </TableCell>
                             <TableCell className="text-xs">{v.producto_nombre}</TableCell>
+                            <TableCell className="text-xs text-stone-500 max-w-[16rem]">
+                              {v.comentario ? (
+                                <span className="break-words">{v.comentario}</span>
+                              ) : (
+                                <span className="text-stone-300">—</span>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right text-xs">{v.cantidad}</TableCell>
                             <TableCell className="text-right text-xs font-medium">{fmoney(v.subtotal_neto)}</TableCell>
                           </TableRow>
