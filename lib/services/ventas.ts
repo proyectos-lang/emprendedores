@@ -1,7 +1,7 @@
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { getTenantStamp, isValidStamp, SESION_INVALIDA_ERROR } from '@/lib/services/tenant-stamp'
-import { registrarMovimientoCaja, getSesionAbierta } from '@/lib/services/caja-chica'
-import { registrarMovimientoCuenta } from '@/lib/services/cuentas'
+import { registrarMovimientoCaja, getSesionAbierta, recomputarSaldosSesion } from '@/lib/services/caja-chica'
+import { registrarMovimientoCuenta, recomputarSaldosCuenta } from '@/lib/services/cuentas'
 import { getHondurasNowISO } from '@/lib/utils/honduras-time'
 
 // ==================== INTERFACES ====================
@@ -1918,31 +1918,25 @@ export async function eliminarVentaCompletamente(
 
     // ----- 2. Revertir movimientos de tesoreria (caja chica y bancos) ------
     // Estos movimientos se identifican por ref_tipo='venta' y ref_id=ventaId.
-    // Para bancos ademas ajustamos el saldo cacheado en cuentas_config.
+    // Capturamos las cuentas y sesiones afectadas ANTES de borrar, para
+    // recalcular sus saldos despues: al eliminar un movimiento intermedio,
+    // el saldo corriente de caja y el saldo_resultante de la cadena quedan
+    // desactualizados (contando dinero de la venta borrada).
     const { data: movsCuenta } = await supabase
       .from('cuenta_movimientos')
-      .select('cuenta_id, monto, tipo')
+      .select('cuenta_id')
       .eq('ref_tipo', 'venta')
       .eq('ref_id', ventaId)
       .eq('razon_social_id', stamp.razon_social_id)
+    const cuentasAfectadas = [...new Set((movsCuenta ?? []).map((m) => m.cuenta_id).filter((x) => x != null))]
 
-    for (const mc of movsCuenta ?? []) {
-      const { data: cuenta } = await supabase
-        .from('cuentas_config')
-        .select('saldo')
-        .eq('id', mc.cuenta_id)
-        .eq('razon_social_id', stamp.razon_social_id)
-        .single()
-      if (cuenta) {
-        // Revertimos el efecto: un Ingreso resta del saldo al eliminarse.
-        const delta = mc.tipo === 'Ingreso' ? -Number(mc.monto || 0) : Number(mc.monto || 0)
-        await supabase
-          .from('cuentas_config')
-          .update({ saldo: +(Number(cuenta.saldo ?? 0) + delta).toFixed(2) })
-          .eq('id', mc.cuenta_id)
-          .eq('razon_social_id', stamp.razon_social_id)
-      }
-    }
+    const { data: movsCaja } = await supabase
+      .from('caja_chica_movimientos')
+      .select('sesion_id')
+      .eq('ref_tipo', 'venta')
+      .eq('ref_id', ventaId)
+      .eq('razon_social_id', stamp.razon_social_id)
+    const sesionesAfectadas = [...new Set((movsCaja ?? []).map((m) => m.sesion_id).filter((x) => x != null))]
 
     await supabase
       .from('cuenta_movimientos')
@@ -1951,15 +1945,17 @@ export async function eliminarVentaCompletamente(
       .eq('ref_id', ventaId)
       .eq('razon_social_id', stamp.razon_social_id)
 
-    // Caja chica: borramos los movimientos ligados a la venta. El saldo de
-    // caja se recalcula sobre la marcha (getSaldoActual suma movimientos),
-    // por lo que no requiere ajuste manual de un saldo cacheado.
     await supabase
       .from('caja_chica_movimientos')
       .delete()
       .eq('ref_tipo', 'venta')
       .eq('ref_id', ventaId)
       .eq('razon_social_id', stamp.razon_social_id)
+
+    // Recalcular saldos: cuentas bancarias (saldo cacheado + cadena) y
+    // sesiones de caja (cadena de saldo_resultante) afectadas.
+    for (const cid of cuentasAfectadas) await recomputarSaldosCuenta(cid as number)
+    for (const sid of sesionesAfectadas) await recomputarSaldosSesion(sid as number)
 
     // ----- 3. Borrar desglose de pagos -------------------------------------
     await supabase
@@ -2072,30 +2068,24 @@ export async function eliminarLineaVenta(
       .eq('razon_social_id', stamp.razon_social_id)
 
     if (!restantes || restantes.length === 0) {
-      // Revertir movimientos bancarios: ajustar saldo cacheado y borrar registros
+      // Se elimino la ultima linea => se borra toda la venta. Revertimos sus
+      // movimientos de tesoreria y recalculamos los saldos afectados (misma
+      // logica que eliminarVentaCompletamente).
       const { data: movsCuenta } = await supabase
         .from('cuenta_movimientos')
-        .select('cuenta_id, monto, tipo')
+        .select('cuenta_id')
         .eq('ref_tipo', 'venta')
         .eq('ref_id', ventaId)
         .eq('razon_social_id', stamp.razon_social_id)
+      const cuentasAfectadas = [...new Set((movsCuenta ?? []).map((m) => m.cuenta_id).filter((x) => x != null))]
 
-      for (const mc of movsCuenta ?? []) {
-        const { data: cuenta } = await supabase
-          .from('cuentas_config')
-          .select('saldo')
-          .eq('id', mc.cuenta_id)
-          .eq('razon_social_id', stamp.razon_social_id)
-          .single()
-        if (cuenta) {
-          const delta = mc.tipo === 'Ingreso' ? -Number(mc.monto || 0) : Number(mc.monto || 0)
-          await supabase
-            .from('cuentas_config')
-            .update({ saldo: +(Number(cuenta.saldo ?? 0) + delta).toFixed(2) })
-            .eq('id', mc.cuenta_id)
-            .eq('razon_social_id', stamp.razon_social_id)
-        }
-      }
+      const { data: movsCaja } = await supabase
+        .from('caja_chica_movimientos')
+        .select('sesion_id')
+        .eq('ref_tipo', 'venta')
+        .eq('ref_id', ventaId)
+        .eq('razon_social_id', stamp.razon_social_id)
+      const sesionesAfectadas = [...new Set((movsCaja ?? []).map((m) => m.sesion_id).filter((x) => x != null))]
 
       await supabase
         .from('cuenta_movimientos')
@@ -2110,6 +2100,9 @@ export async function eliminarLineaVenta(
         .eq('ref_tipo', 'venta')
         .eq('ref_id', ventaId)
         .eq('razon_social_id', stamp.razon_social_id)
+
+      for (const cid of cuentasAfectadas) await recomputarSaldosCuenta(cid as number)
+      for (const sid of sesionesAfectadas) await recomputarSaldosSesion(sid as number)
 
       // No lines remain: clean up the sale
       await supabase.from('ventas_pagos_detalle').delete().eq('venta_id', ventaId).eq('razon_social_id', stamp.razon_social_id)

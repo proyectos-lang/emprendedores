@@ -299,6 +299,51 @@ export async function registrarMovimientoCuenta(input: {
   return { data: mov as CuentaMovimiento, error: null }
 }
 
+/**
+ * Recalcula `saldo_resultante` de todos los movimientos de una cuenta en
+ * orden cronologico (fecha, id) y sincroniza el saldo cacheado en
+ * `cuentas_config`. Necesario tras eliminar movimientos intermedios (ej.
+ * al borrar una venta pagada por banco) para que tanto la cadena de saldos
+ * como el saldo mostrado de la cuenta vuelvan a cuadrar. `monto` se guarda
+ * positivo y el signo lo determina el tipo (Ingreso +, Egreso -).
+ */
+export async function recomputarSaldosCuenta(cuenta_id: number): Promise<void> {
+  const supabase = createClient()
+  if (!supabase) return
+  const stamp = await getTenantStamp(supabase)
+  if (!isValidStamp(stamp)) return
+
+  const { data: movs, error } = await supabase
+    .from("cuenta_movimientos")
+    .select("id, tipo, monto, saldo_resultante")
+    .eq("cuenta_id", cuenta_id)
+    .eq("razon_social_id", stamp.razon_social_id)
+    .order("fecha", { ascending: true })
+    .order("id", { ascending: true })
+
+  if (error || !movs) return
+
+  let saldo = 0
+  for (const m of movs as Array<{ id: number; tipo: string; monto: number; saldo_resultante: number }>) {
+    const signed = m.tipo === "Ingreso" ? Number(m.monto || 0) : -Number(m.monto || 0)
+    saldo = +(saldo + signed).toFixed(2)
+    if (+Number(m.saldo_resultante).toFixed(2) !== saldo) {
+      await supabase
+        .from("cuenta_movimientos")
+        .update({ saldo_resultante: saldo })
+        .eq("id", m.id)
+        .eq("razon_social_id", stamp.razon_social_id)
+    }
+  }
+
+  // Sincronizar el saldo cacheado de la cuenta con el saldo real recomputado.
+  await supabase
+    .from("cuentas_config")
+    .update({ saldo })
+    .eq("id", cuenta_id)
+    .eq("razon_social_id", stamp.razon_social_id)
+}
+
 export async function getMovimientosCuenta(
   cuenta_id: number,
   limit = 200

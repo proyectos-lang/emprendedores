@@ -324,6 +324,47 @@ async function getSaldoActual(sesion_id: number): Promise<number> {
 }
 
 /**
+ * Recalcula `saldo_resultante` de TODOS los movimientos de una sesion en
+ * orden cronologico (created_at, id). Necesario tras eliminar movimientos
+ * intermedios (ej. al borrar una venta en efectivo): sin esto, el saldo
+ * corriente de la caja queda inflado porque `getSaldoActual` lee el
+ * saldo_resultante del ultimo movimiento, que seguia contando el dinero
+ * de la venta borrada.
+ *
+ * El saldo parte de 0 y suma el `monto` con signo de cada movimiento (la
+ * Apertura ya trae monto = saldo_inicial). Solo escribe las filas que
+ * cambian, para minimizar writes.
+ */
+export async function recomputarSaldosSesion(sesion_id: number): Promise<void> {
+  const supabase = createClient()
+  if (!supabase) return
+  const stamp = await getTenantStamp(supabase)
+  if (!isValidStamp(stamp)) return
+
+  const { data: movs, error } = await supabase
+    .from("caja_chica_movimientos")
+    .select("id, monto, saldo_resultante")
+    .eq("sesion_id", sesion_id)
+    .eq("razon_social_id", stamp.razon_social_id)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+
+  if (error || !movs) return
+
+  let saldo = 0
+  for (const m of movs as Array<{ id: number; monto: number; saldo_resultante: number }>) {
+    saldo = +(saldo + Number(m.monto || 0)).toFixed(2)
+    if (+Number(m.saldo_resultante).toFixed(2) !== saldo) {
+      await supabase
+        .from("caja_chica_movimientos")
+        .update({ saldo_resultante: saldo })
+        .eq("id", m.id)
+        .eq("razon_social_id", stamp.razon_social_id)
+    }
+  }
+}
+
+/**
  * Helper publico: devuelve saldo actual de la sesion abierta o 0 si no hay.
  * Util para banners/cards de saldo en la UI.
  */
