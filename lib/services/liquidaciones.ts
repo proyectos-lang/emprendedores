@@ -323,6 +323,38 @@ export async function marcarLiquidacionPagada(
   return { error: null }
 }
 
+/**
+ * Confirma el pago de TODAS las liquidaciones pendientes de una semana en un
+ * solo paso, sin exigir comprobante ni fecha (se estampa la fecha de hoy
+ * automaticamente). Util para pagar a todos los emprendedores de golpe.
+ * Solo afecta las pendientes; las ya pagadas se dejan intactas.
+ */
+export async function marcarLiquidacionesSemanaPagadas(
+  razonSocialId: number,
+  fechaInicio: string,
+  usuario: string
+): Promise<{ pagadas: number; error: string | null }> {
+  const supabase = createAdminClient()
+  if (!supabase) return { pagadas: 0, error: "Cliente admin no disponible" }
+
+  const ahora = getHondurasNowISO()
+  const { data, error } = await supabase
+    .from("liquidaciones_semanales")
+    .update({
+      estado: "pagado",
+      fecha_pago: ahora,
+      usuario,
+      updated_at: ahora,
+    })
+    .eq("razon_social_id", razonSocialId)
+    .eq("fecha_inicio", fechaInicio)
+    .eq("estado", "pendiente")
+    .select("id")
+
+  if (error) return { pagadas: 0, error: error.message }
+  return { pagadas: data?.length ?? 0, error: null }
+}
+
 /** Revierte una liquidacion pagada a pendiente (limpia fecha/comprobante). */
 export async function revertirLiquidacion(
   id: number,

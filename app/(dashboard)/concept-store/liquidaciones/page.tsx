@@ -9,6 +9,7 @@ import {
   recalcularLiquidacion,
   recalcularLiquidacionesSemana,
   marcarLiquidacionPagada,
+  marcarLiquidacionesSemanaPagadas,
   revertirLiquidacion,
   eliminarLiquidacion,
   getSemanasGeneradas,
@@ -190,6 +191,35 @@ export default function LiquidacionesPage() {
       }
     } finally {
       setRecalculandoId(null)
+    }
+  }
+
+  // Confirmar pago masivo (todas las pendientes de la semana, sin comprobante).
+  const [confirmarPagoTodos, setConfirmarPagoTodos] = React.useState(false)
+  const [pagandoTodos, setPagandoTodos] = React.useState(false)
+
+  const handlePagarTodos = async () => {
+    if (razonSocialId == null) return
+    setPagandoTodos(true)
+    try {
+      const { pagadas, error } = await marcarLiquidacionesSemanaPagadas(
+        razonSocialId,
+        inicio,
+        user?.nombre ?? "admin"
+      )
+      if (error) {
+        toast({ title: "Error", description: error, variant: "destructive" })
+      } else {
+        toast({
+          title: pagadas > 0
+            ? `${pagadas} liquidacion${pagadas !== 1 ? "es" : ""} marcada${pagadas !== 1 ? "s" : ""} como pagada${pagadas !== 1 ? "s" : ""}`
+            : "Sin liquidaciones pendientes que pagar",
+        })
+        setConfirmarPagoTodos(false)
+        await cargar()
+      }
+    } finally {
+      setPagandoTodos(false)
     }
   }
 
@@ -415,6 +445,15 @@ export default function LiquidacionesPage() {
             >
               {recalculandoTodo ? <Spinner className="h-4 w-4 mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Recalcular todo
+            </Button>
+            <Button
+              onClick={() => setConfirmarPagoTodos(true)}
+              disabled={loading || razonSocialId == null || cantPendientes === 0}
+              className="bg-green-600 hover:bg-green-700"
+              title="Marcar como pagadas todas las liquidaciones pendientes de esta semana"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Pagar a todos
             </Button>
             <Button onClick={handleGenerar} disabled={generando || loading || razonSocialId == null}>
               {generando ? <Spinner className="h-4 w-4 mr-2" /> : null}
@@ -648,6 +687,33 @@ export default function LiquidacionesPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* AlertDialog: Confirmar pago masivo */}
+      <AlertDialog open={confirmarPagoTodos} onOpenChange={(o) => { if (!o) setConfirmarPagoTodos(false) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar pago a todos</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se marcaran como <span className="font-semibold text-stone-800">pagadas</span> las{" "}
+              <span className="font-semibold text-stone-800">{cantPendientes}</span>{" "}
+              liquidacion{cantPendientes !== 1 ? "es" : ""} pendiente{cantPendientes !== 1 ? "s" : ""} de la semana{" "}
+              <span className="font-semibold text-stone-800">{rango.label}</span>, sin comprobante de pago.
+              Cada emprendedor las vera como pagadas en su portal.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pagandoTodos}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); handlePagarTodos() }}
+              disabled={pagandoTodos}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {pagandoTodos ? <Spinner className="h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Confirmar pago
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* AlertDialog: Confirmar eliminacion de una semana completa */}
       <AlertDialog open={!!semanaEliminar} onOpenChange={(o) => { if (!o) setSemanaEliminar(null) }}>
